@@ -7,7 +7,16 @@ on:
   schedule:
     - cron: "0 1 * * *"   # 每天 UTC 01:00（北京时间 9:00）
   # 允许手动触发（方便测试）
-  workflow_dispatch: {}
+workflow_dispatch:
+  inputs:
+    force_send:
+      description: "手动测试：强制推送最新内容（忽略state.json）"
+      required: false
+      default: "false"
+    force_items:
+      description: "手动测试：强制推送条数"
+      required: false
+      default: "3"
 
 # 允许工作流修改仓库内容（用于提交 state.json）
 permissions:
