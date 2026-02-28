@@ -1,69 +1,78 @@
-# 工作流名称（在 Actions 页面显示）
-name: RSS to Feishu
-
-# 触发条件
-on:
-  # 定时执行（GitHub 使用 UTC 时间）
-  schedule:
-    - cron: "0 1 * * *"   # 每天 UTC 01:00（北京时间 9:00）
-
-  # 允许手动触发（方便测试）
-  workflow_dispatch:
-    inputs:
-      force_send:
-        description: "手动测试：强制推送最新内容（忽略 state.json）"
-        required: false
-        default: "false"
-      force_items:
-        description: "手动测试：强制推送条数"
-        required: false
-        default: "3"
-
-# 允许工作流修改仓库内容（用于提交 state.json）
-permissions:
-  contents: write
-
-jobs:
-  push:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Run bot
-        env:
-          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-          RSS_URL: "https://imjuya.github.io/juya-ai-daily/rss.xml"
-          MAX_ITEMS_PER_RUN: "5"
-          INCLUDE_SUMMARY: "1"
-          SUMMARY_MAX_LEN: "140"
-
-          # 只有手动 Run workflow 才会用到（定时触发时这里通常是空）
-          FORCE_SEND: ${{ github.event.inputs.force_send }}
-          FORCE_ITEMS: ${{ github.event.inputs.force_items }}
-
-        run: |
-          python rss_to_feishu.py
-
-      - name: Commit state.json
-        run: |
-          if git diff --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add state.json
-          git commit -m "Update RSS state"
-          git push
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/.github/workflows/feishu_rss.yml b/.github/workflows/feishu_rss.yml
+index df2e0b5d865affcc05fdd3f263300099c7925200..d0ff26d957928091a7cb8cc7a8311b4474d18cd6 100644
+--- a/.github/workflows/feishu_rss.yml
++++ b/.github/workflows/feishu_rss.yml
+@@ -1,69 +1,40 @@
+ # 工作流名称（在 Actions 页面显示）
+ name: RSS to Feishu
+ 
+ # 触发条件
+ on:
+   # 定时执行（GitHub 使用 UTC 时间）
+   schedule:
+     - cron: "0 1 * * *"   # 每天 UTC 01:00（北京时间 9:00）
+ 
+   # 允许手动触发（方便测试）
+   workflow_dispatch:
+-    inputs:
+-      force_send:
+-        description: "手动测试：强制推送最新内容（忽略 state.json）"
+-        required: false
+-        default: "false"
+-      force_items:
+-        description: "手动测试：强制推送条数"
+-        required: false
+-        default: "3"
+-
+-# 允许工作流修改仓库内容（用于提交 state.json）
+-permissions:
+-  contents: write
+ 
+ jobs:
+   push:
+     runs-on: ubuntu-latest
+ 
+     steps:
+       - name: Checkout repository
+         uses: actions/checkout@v4
+ 
+       - name: Setup Python
+         uses: actions/setup-python@v5
+         with:
+           python-version: "3.11"
+ 
+       - name: Install dependencies
+         run: |
+           python -m pip install --upgrade pip
+           pip install -r requirements.txt
+ 
+       - name: Run bot
+         env:
+           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+           RSS_URL: "https://imjuya.github.io/juya-ai-daily/rss.xml"
+           MAX_ITEMS_PER_RUN: "5"
+           INCLUDE_SUMMARY: "1"
+           SUMMARY_MAX_LEN: "140"
+ 
+-          # 只有手动 Run workflow 才会用到（定时触发时这里通常是空）
+-          FORCE_SEND: ${{ github.event.inputs.force_send }}
+-          FORCE_ITEMS: ${{ github.event.inputs.force_items }}
+-
+         run: |
+           python rss_to_feishu.py
+-
+-      - name: Commit state.json
+-        run: |
+-          if git diff --quiet; then
+-            echo "No changes to commit."
+-            exit 0
+-          fi
+-          git config user.name "github-actions[bot]"
+-          git config user.email "github-actions[bot]@users.noreply.github.com"
+-          git add state.json
+-          git commit -m "Update RSS state"
+-          git push
+ 
+EOF
+)
