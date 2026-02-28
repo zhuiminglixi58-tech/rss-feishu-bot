@@ -21,12 +21,37 @@ def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
-def feishu_send_text(text: str):
+def feishu_send_card(title, items):
     if not FEISHU_WEBHOOK:
-        raise RuntimeError("Missing FEISHU_WEBHOOK (set it in GitHub Secrets).")
-    payload = {"msg_type": "text", "content": {"text": text}}
-    r = requests.post(FEISHU_WEBHOOK, json=payload, timeout=TIMEOUT)
-    r.raise_for_status()
+        raise RuntimeError("Missing FEISHU_WEBHOOK")
+
+    content_blocks = []
+
+    for idx, item in enumerate(items, 1):
+        content_blocks.append({
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": f"**{idx}. {item['title']}**\n[🔗 查看原文]({item['link']})"
+            }
+        })
+
+        content_blocks.append({"tag": "hr"})
+
+    payload = {
+        "msg_type": "interactive",
+        "card": {
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": title
+                }
+            },
+            "elements": content_blocks
+        }
+    }
+
+    requests.post(FEISHU_WEBHOOK, json=payload)
 
 def entry_id(entry):
     return getattr(entry, "id", None) or getattr(entry, "guid", None) or getattr(entry, "link", "")
