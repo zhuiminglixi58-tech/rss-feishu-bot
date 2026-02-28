@@ -6,17 +6,18 @@ on:
   # 定时执行（GitHub 使用 UTC 时间）
   schedule:
     - cron: "0 1 * * *"   # 每天 UTC 01:00（北京时间 9:00）
+
   # 允许手动触发（方便测试）
-workflow_dispatch:
-  inputs:
-    force_send:
-      description: "手动测试：强制推送最新内容（忽略state.json）"
-      required: false
-      default: "false"
-    force_items:
-      description: "手动测试：强制推送条数"
-      required: false
-      default: "3"
+  workflow_dispatch:
+    inputs:
+      force_send:
+        description: "手动测试：强制推送最新内容（忽略 state.json）"
+        required: false
+        default: "false"
+      force_items:
+        description: "手动测试：强制推送条数"
+        required: false
+        default: "3"
 
 # 允许工作流修改仓库内容（用于提交 state.json）
 permissions:
@@ -24,65 +25,45 @@ permissions:
 
 jobs:
   push:
-    # 运行环境（GitHub 提供的 Linux 服务器）
     runs-on: ubuntu-latest
 
     steps:
-      # 第一步：拉取当前仓库代码
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 第二步：安装 Python 运行环境
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # 第三步：安装依赖包（来自 requirements.txt）
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 第四步：运行 RSS 推送脚本
       - name: Run bot
         env:
-          # 从 GitHub Secrets 读取飞书 Webhook（安全存储）
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-
-          # 要订阅的 RSS 地址
           RSS_URL: "https://imjuya.github.io/juya-ai-daily/rss.xml"
-
-          # 每次最多推送几条新内容
           MAX_ITEMS_PER_RUN: "5"
-
-          # 是否在卡片中显示摘要（1=显示，0=不显示）
           INCLUDE_SUMMARY: "1"
-
-          # 摘要最大长度（超过自动截断）
           SUMMARY_MAX_LEN: "140"
 
-          # 只有手动 Run workflow 才会用到；定时触发时默认为 false
+          # 只有手动 Run workflow 才会用到（定时触发时这里通常是空）
           FORCE_SEND: ${{ github.event.inputs.force_send }}
           FORCE_ITEMS: ${{ github.event.inputs.force_items }}
 
         run: |
           python rss_to_feishu.py
 
-      # 第五步：提交 state.json（用于去重）
       - name: Commit state.json
         run: |
-          # 如果没有文件变化就退出（避免空提交）
           if git diff --quiet; then
             echo "No changes to commit."
             exit 0
           fi
-
-          # 设置提交人信息
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # 提交 state.json 更新
           git add state.json
           git commit -m "Update RSS state"
           git push
