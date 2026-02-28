@@ -1,20 +1,20 @@
  (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
 diff --git a/.github/workflows/feishu_rss.yml b/.github/workflows/feishu_rss.yml
-index df2e0b5d865affcc05fdd3f263300099c7925200..d0ff26d957928091a7cb8cc7a8311b4474d18cd6 100644
+index df2e0b5d865affcc05fdd3f263300099c7925200..847b6bcc65e6ea149bb98f2601bdca4a8a5779b1 100644
 --- a/.github/workflows/feishu_rss.yml
 +++ b/.github/workflows/feishu_rss.yml
-@@ -1,69 +1,40 @@
- # 工作流名称（在 Actions 页面显示）
+@@ -1,69 +1,34 @@
+-# 工作流名称（在 Actions 页面显示）
  name: RSS to Feishu
  
- # 触发条件
+-# 触发条件
  on:
-   # 定时执行（GitHub 使用 UTC 时间）
+-  # 定时执行（GitHub 使用 UTC 时间）
    schedule:
-     - cron: "0 1 * * *"   # 每天 UTC 01:00（北京时间 9:00）
- 
-   # 允许手动触发（方便测试）
-   workflow_dispatch:
+-    - cron: "0 1 * * *"   # 每天 UTC 01:00（北京时间 9:00）
+-
+-  # 允许手动触发（方便测试）
+-  workflow_dispatch:
 -    inputs:
 -      force_send:
 -        description: "手动测试：强制推送最新内容（忽略 state.json）"
@@ -28,9 +28,12 @@ index df2e0b5d865affcc05fdd3f263300099c7925200..d0ff26d957928091a7cb8cc7a8311b44
 -# 允许工作流修改仓库内容（用于提交 state.json）
 -permissions:
 -  contents: write
++    - cron: "0 1 * * *"
++  workflow_dispatch: {}
  
  jobs:
-   push:
+-  push:
++  push_rss:
      runs-on: ubuntu-latest
  
      steps:
@@ -54,7 +57,7 @@ index df2e0b5d865affcc05fdd3f263300099c7925200..d0ff26d957928091a7cb8cc7a8311b44
            MAX_ITEMS_PER_RUN: "5"
            INCLUDE_SUMMARY: "1"
            SUMMARY_MAX_LEN: "140"
- 
+-
 -          # 只有手动 Run workflow 才会用到（定时触发时这里通常是空）
 -          FORCE_SEND: ${{ github.event.inputs.force_send }}
 -          FORCE_ITEMS: ${{ github.event.inputs.force_items }}
