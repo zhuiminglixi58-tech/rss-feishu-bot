@@ -8,10 +8,22 @@ RSS_URL = os.environ.get("RSS_URL", "https://imjuya.github.io/juya-ai-daily/rss.
 FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK")
 STATE_FILE = "state.json"
 
-MAX_ITEMS_PER_RUN = int(os.environ.get("MAX_ITEMS_PER_RUN", "5"))  # 每次最多推送几条
-TIMEOUT = int(os.environ.get("TIMEOUT", "15"))  # 请求超时（秒）
-INCLUDE_SUMMARY = os.environ.get("INCLUDE_SUMMARY", "0") == "1"  # 1=卡片里带摘要，0=只发标题链接
-SUMMARY_MAX_LEN = int(os.environ.get("SUMMARY_MAX_LEN", "140"))  # 摘要最大长度
+# 手动测试模式：强制推送（忽略 state.json）
+FORCE_SEND = os.environ.get("FORCE_SEND", "false").lower() == "true"
+FORCE_ITEMS = int(os.environ.get("FORCE_ITEMS", "3"))
+
+# 正常模式：每次最多推送几条新内容
+MAX_ITEMS_PER_RUN = int(os.environ.get("MAX_ITEMS_PER_RUN", "5"))
+
+# 网络超时
+TIMEOUT = int(os.environ.get("TIMEOUT", "15"))
+
+# 卡片显示摘要（1=显示，0=不显示）
+INCLUDE_SUMMARY = os.environ.get("INCLUDE_SUMMARY", "0") == "1"
+SUMMARY_MAX_LEN = int(os.environ.get("SUMMARY_MAX_LEN", "140"))
+
+# 没有新内容时是否也发提示（可选：1=发提示，0=不发）
+ALWAYS_NOTIFY = os.environ.get("ALWAYS_NOTIFY", "0") == "1"
 
 
 # ---------------- 状态读写（去重） ----------------
@@ -46,7 +58,10 @@ def feishu_send_card(card_title: str, items: list[dict]):
         link = item.get("link", "")
         summary = (item.get("summary") or "").strip()
 
-        md = f"**{idx}. {title}**\n[🔗 查看原文]({link})" if link else f"**{idx}. {title}**"
+        md = f"**{idx}. {title}**"
+        if link:
+            md += f"\n[🔗 查看原文]({link})"
+
         if INCLUDE_SUMMARY and summary:
             if len(summary) > SUMMARY_MAX_LEN:
                 summary = summary[:SUMMARY_MAX_LEN] + "…"
@@ -65,9 +80,7 @@ def feishu_send_card(card_title: str, items: list[dict]):
     payload = {
         "msg_type": "interactive",
         "card": {
-            "header": {
-                "title": {"tag": "plain_text", "content": card_title}
-            },
+            "header": {"title": {"tag": "plain_text", "content": card_title}},
             "elements": elements
         }
     }
@@ -85,7 +98,6 @@ def main():
     entries = getattr(feed, "entries", []) or []
 
     if not entries:
-        # 用卡片发个提示（避免 feishu_send_text 未定义）
         feishu_send_card("RSS 机器人", [{
             "title": "未获取到内容",
             "link": RSS_URL,
@@ -93,36 +105,49 @@ def main():
         }])
         return
 
-    # 收集 last_id 之后的新内容（RSS 通常按新->旧）
-    new_entries = []
-    for e in entries:
-        if entry_id(e) == last_id:
-            break
-        new_entries.append(e)
-
-    # 首次运行只推 1 条，防止刷屏
-    if not last_id:
-        new_entries = new_entries[:1]
+    # 选择本次要推送的条目列表
+    if FORCE_SEND:
+        # 手动测试：忽略去重，强制推最新 N 条
+        new_entries = entries[:max(1, FORCE_ITEMS)]
     else:
-        new_entries = new_entries[:MAX_ITEMS_PER_RUN]
+        # 正常：只推送 last_id 之后的新内容
+        new_entries = []
+        for e in entries:
+            if entry_id(e) == last_id:
+                break
+            new_entries.append(e)
 
+        # 首次运行只推 1 条，防止刷屏
+        if not last_id:
+            new_entries = new_entries[:1]
+        else:
+            new_entries = new_entries[:MAX_ITEMS_PER_RUN]
+
+    # 没有新内容：默认不发（除非 ALWAYS_NOTIFY=1）
     if not new_entries:
+        if ALWAYS_NOTIFY:
+            feishu_send_card("AI早报更新", [{
+                "title": "暂无更新",
+                "link": RSS_URL,
+                "summary": "本次运行未发现新条目。"
+            }])
         return
 
-    # 为了阅读体验：按旧->新展示
+    # 为了阅读体验：按旧->新展示（RSS 通常是新->旧）
     new_entries.reverse()
 
     items = []
     for e in new_entries:
         title = getattr(e, "title", "(无标题)")
         link = getattr(e, "link", "")
-        summary = getattr(e, "summary", "") or ""
-        summary = summary.strip()
+        summary = (getattr(e, "summary", "") or "").strip()
         items.append({"title": title, "link": link, "summary": summary})
 
-    feishu_send_card("AI早报更新", items)
+    # 卡片标题：强制推送时标记为“测试”
+    card_title = "AI早报更新（测试）" if FORCE_SEND else "AI早报更新"
+    feishu_send_card(card_title, items)
 
-    # 更新状态：记录 RSS 当前最新的一条
+    # 更新状态：记录 RSS 当前最新的一条（entries[0] 是最新）
     state["last_id"] = entry_id(entries[0])
     save_state(state)
 
