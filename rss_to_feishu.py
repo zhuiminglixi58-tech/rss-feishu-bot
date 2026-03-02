@@ -58,24 +58,21 @@ def feishu_send_card(card_title: str, items: list[dict]):
         link = item.get("link", "")
         summary = (item.get("summary") or "").strip()
 
-        md = f"**{idx}. {title}**"
+        md = f"{idx}."
         if link:
-            md += f"\n[🔗 查看原文]({link})"
+            md += f" [{title}]({link})"
+        else:
+            md += f" {title}"
 
         if INCLUDE_SUMMARY and summary:
             if len(summary) > SUMMARY_MAX_LEN:
                 summary = summary[:SUMMARY_MAX_LEN] + "…"
-            md += f"\n> {summary}"
+            md += f" - {summary}"
 
         elements.append({
             "tag": "div",
             "text": {"tag": "lark_md", "content": md}
         })
-        elements.append({"tag": "hr"})
-
-    # 去掉最后一个分割线
-    if elements and elements[-1].get("tag") == "hr":
-        elements.pop()
 
     payload = {
         "msg_type": "interactive",
