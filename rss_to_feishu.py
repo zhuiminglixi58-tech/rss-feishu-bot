@@ -27,6 +27,46 @@ SUMMARY_MAX_LEN = int(os.environ.get("SUMMARY_MAX_LEN", "140"))
 ALWAYS_NOTIFY = os.environ.get("ALWAYS_NOTIFY", "0") == "1"
 
 
+# ---------------- 新闻分类与摘要构建 ----------------
+CATEGORIES = {
+    "资本与产业": ["融资", "投资", "并购", "领投", "估值", "政策"],
+    "安全与伦理": ["安全", "国防", "伦理", "监管", "政府"],
+    "开源与工具": ["开源", "发布", "模型", "工具", "LoRA"],
+    "医疗应用": ["医疗", "脑机", "临床", "医院"],
+    "AI for Science": ["物理", "材料", "数学", "科研"],
+}
+
+LEAD_SENTENCE = "近期AI领域资本与伦理议题频出，同时开源生态持续活跃，医疗应用与 AI for Science 也在加速落地。"
+
+
+def classify_news(item: dict) -> str:
+    text = f"{(item.get('title') or '').strip()} {(item.get('summary') or '').strip()}".lower()
+    for category, keywords in CATEGORIES.items():
+        for keyword in keywords:
+            if keyword.lower() in text:
+                return category
+    return "其他"
+
+
+def build_structured_digest(items: list[dict]) -> str:
+    grouped = {category: [] for category in CATEGORIES}
+    grouped["其他"] = []
+
+    for item in items:
+        category = classify_news(item)
+        title = (item.get("title") or "(无标题)").strip()
+        grouped.setdefault(category, []).append(f"- {title}")
+
+    sections = [LEAD_SENTENCE]
+    for category in [*CATEGORIES.keys(), "其他"]:
+        news_lines = grouped.get(category, [])
+        if news_lines:
+            sections.append(f"**{category}**")
+            sections.extend(news_lines)
+
+    return "\n\n".join(sections)
+
+
 # ---------------- 状态读写（去重） ----------------
 def load_state():
     if not os.path.exists(STATE_FILE):
@@ -79,7 +119,7 @@ def format_item_content(title: str, link: str, summary: str) -> str:
     return content
 
 
-def feishu_send_card(card_title: str, items: list[dict]):
+def feishu_send_card(card_title: str, items: list[dict], custom_markdown: str | None = None):
     """
     items: [{"title": "...", "link": "...", "summary": "..."}]
     """
@@ -87,17 +127,23 @@ def feishu_send_card(card_title: str, items: list[dict]):
         raise RuntimeError("Missing FEISHU_WEBHOOK (set it in GitHub Secrets).")
 
     elements = []
-    for item in items:
-        title = item.get("title", "(无标题)")
-        link = item.get("link", "")
-        summary = (item.get("summary") or "").strip()
-
-        md = format_item_content(title=title, link=link, summary=summary)
-
+    if custom_markdown is not None:
         elements.append({
             "tag": "div",
-            "text": {"tag": "lark_md", "content": md}
+            "text": {"tag": "lark_md", "content": custom_markdown}
         })
+    else:
+        for item in items:
+            title = item.get("title", "(无标题)")
+            link = item.get("link", "")
+            summary = (item.get("summary") or "").strip()
+
+            md = format_item_content(title=title, link=link, summary=summary)
+
+            elements.append({
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": md}
+            })
 
     payload = {
         "msg_type": "interactive",
@@ -167,7 +213,8 @@ def main():
 
     # 卡片标题：强制推送时标记为“测试”
     card_title = "AI早报更新（测试）" if FORCE_SEND else "AI早报更新"
-    feishu_send_card(card_title, items)
+    digest = build_structured_digest(items)
+    feishu_send_card(card_title, [], custom_markdown=digest)
 
     # 更新状态：记录 RSS 当前最新的一条（entries[0] 是最新）
     state["last_id"] = entry_id(entries[0])
