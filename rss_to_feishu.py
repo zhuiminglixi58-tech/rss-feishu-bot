@@ -6,6 +6,7 @@ from datetime import datetime
 # ===== Config =====
 GITHUB_REPO = "imjuya/juya-ai-daily"
 FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
+SERVERCHAN_KEY = os.environ.get("SERVERCHAN_KEY", "")
 
 # 分类 emoji 映射表（未匹配到的自动用 📌）
 EMOJI_MAP = {
@@ -40,13 +41,7 @@ def get_latest_issue():
 def extract_overview(body):
     """
     只提取 ## 概览 区域内的内容。
-    概览区域结构：
-      ## 概览
-        ### 要闻          ← 三级标题作为分类
-        - [条目文字](链接)
-        ### 模型发布
-        - ...
-    遇到下一个 ## 二级标题时停止。
+    用 ### 三级标题识别分类，遇到下一个 ## 停止。
     """
     sections = {}
     current_section = None
@@ -57,28 +52,23 @@ def extract_overview(body):
         if not line:
             continue
 
-        # 进入概览区域
         if line.startswith('## ') and line[3:].strip() == '概览':
             in_overview = True
             continue
 
-        # 离开概览区域（遇到下一个 ## 标题）
         if in_overview and line.startswith('## '):
             break
 
         if not in_overview:
             continue
 
-        # ### 三级标题 = 分类
         if line.startswith('### '):
             current_section = line[4:].strip()
             sections[current_section] = []
 
-        # 列表条目
         elif (line.startswith('- ') or line.startswith('* ')) and current_section is not None:
             raw = line[2:].strip()
 
-            # 提取第一个外部链接（排除 #数字 锚点）
             url = None
             for m in re.finditer(r'\(([^)]+)\)', raw):
                 candidate = m.group(1)
@@ -86,7 +76,6 @@ def extract_overview(body):
                     url = candidate
                     break
 
-            # 提取文字
             text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', raw)
             text = re.sub(r'`[^`]+`', '', text).strip()
             text = re.sub(r'\s*#\d+\s*$', '', text).strip()
@@ -105,10 +94,8 @@ def build_feishu_card(issue, sections):
     for title, items in sections.items():
         if not items:
             continue
-
         display_title = EMOJI_MAP.get(title, f"📌 {title}")
         overview_lines.append(f"**{display_title}**")
-
         for item in items:
             text = item["text"]
             url = item["url"]
@@ -116,8 +103,7 @@ def build_feishu_card(issue, sections):
                 overview_lines.append(f"• {text} [↗]({url})")
             else:
                 overview_lines.append(f"• {text}")
-
-        overview_lines.append("")  # 分类间空行
+        overview_lines.append("")
 
     elements.append({
         "tag": "div",
@@ -126,9 +112,7 @@ def build_feishu_card(issue, sections):
             "content": "\n".join(overview_lines).strip()
         }
     })
-
     elements.append({"tag": "hr"})
-
     elements.append({
         "tag": "div",
         "text": {
@@ -141,10 +125,7 @@ def build_feishu_card(issue, sections):
         "msg_type": "interactive",
         "card": {
             "header": {
-                "title": {
-                    "tag": "plain_text",
-                    "content": f"🤖 AI 早报 · {today}"
-                },
+                "title": {"tag": "plain_text", "content": f"🤖 AI 早报 · {today}"},
                 "template": "blue"
             },
             "elements": elements
@@ -152,11 +133,38 @@ def build_feishu_card(issue, sections):
     }
 
 
-def main():
-    if not FEISHU_WEBHOOK:
-        print("FEISHU_WEBHOOK not set")
-        return
+def push_to_serverchan(issue, sections):
+    """推送到 Server酱，微信收到通知后可转发到群"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    lines = []
 
+    for title, items in sections.items():
+        if not items:
+            continue
+        display_title = EMOJI_MAP.get(title, f"📌 {title}")
+        lines.append(f"### {display_title}")
+        for item in items:
+            text = item["text"]
+            url = item["url"]
+            if url:
+                lines.append(f"- [{text}]({url})")
+            else:
+                lines.append(f"- {text}")
+        lines.append("")
+
+    lines.append(f"---")
+    lines.append(f"[📖 查看完整原文]({issue['html_url']})")
+
+    desp = "\n".join(lines).strip()
+    url = f"https://sctapi.ftqq.com/{SERVERCHAN_KEY}.send"
+    resp = requests.post(url, data={
+        "title": f"🤖 AI 早报 · {today}",
+        "desp": desp
+    }, timeout=10)
+    print("Server酱推送结果:", resp.json())
+
+
+def main():
     print("Fetching latest issue...")
     issue = get_latest_issue()
     if not issue:
@@ -168,12 +176,22 @@ def main():
     print(f"Parsed {len(sections)} sections: {list(sections.keys())}")
 
     if not sections:
-        print("Warning: no overview sections found, check markdown structure")
+        print("Warning: no overview sections found")
         return
 
-    card = build_feishu_card(issue, sections)
-    resp = requests.post(FEISHU_WEBHOOK, json=card, timeout=10)
-    print("Result:", resp.json())
+    # 推送飞书
+    if FEISHU_WEBHOOK:
+        card = build_feishu_card(issue, sections)
+        resp = requests.post(FEISHU_WEBHOOK, json=card, timeout=10)
+        print("飞书推送结果:", resp.json())
+    else:
+        print("FEISHU_WEBHOOK not set, skipping")
+
+    # 推送 Server酱（微信）
+    if SERVERCHAN_KEY:
+        push_to_serverchan(issue, sections)
+    else:
+        print("SERVERCHAN_KEY not set, skipping")
 
 
 if __name__ == "__main__":
