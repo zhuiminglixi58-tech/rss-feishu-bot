@@ -1,8 +1,10 @@
-import os
 import json
+import os
 import re
-import requests
+from html import unescape
+
 import feedparser
+import requests
 
 # ---------------- 配置 ----------------
 RSS_URL = os.environ.get("RSS_URL", "https://imjuya.github.io/juya-ai-daily/rss.xml")
@@ -19,9 +21,11 @@ MAX_ITEMS_PER_RUN = int(os.environ.get("MAX_ITEMS_PER_RUN", "5"))
 # 网络超时
 TIMEOUT = int(os.environ.get("TIMEOUT", "15"))
 
-# 卡片显示摘要（1=显示，0=不显示）
-INCLUDE_SUMMARY = os.environ.get("INCLUDE_SUMMARY", "0") == "1"
-SUMMARY_MAX_LEN = int(os.environ.get("SUMMARY_MAX_LEN", "140"))
+# 结构化摘要中每条新闻展示的要点数量
+DIGEST_POINTS_PER_ITEM = int(os.environ.get("DIGEST_POINTS_PER_ITEM", "2"))
+
+# 每个分类最多展示多少条原文新闻
+MAX_NEWS_PER_CATEGORY = int(os.environ.get("MAX_NEWS_PER_CATEGORY", "5"))
 
 # 没有新内容时是否也发提示（可选：1=发提示，0=不发）
 ALWAYS_NOTIFY = os.environ.get("ALWAYS_NOTIFY", "0") == "1"
@@ -36,10 +40,22 @@ CATEGORIES = {
     "AI for Science": ["物理", "材料", "数学", "科研"],
 }
 
-LEAD_SENTENCE = "近期AI领域资本与伦理议题频出，同时开源生态持续活跃，医疗应用与 AI for Science 也在加速落地。"
+HEADING_TO_CATEGORY = {
+    "资本与产业": "资本与产业",
+    "安全与伦理": "安全与伦理",
+    "开源与工具": "开源与工具",
+    "医疗应用": "医疗应用",
+    "AI for Science": "AI for Science",
+}
+
+LEAD_SENTENCE = "以下为 AI 早报原版要点分类整理，点击标题可直达原文。"
 
 
 def classify_news(item: dict) -> str:
+    preset = (item.get("category") or "").strip()
+    if preset:
+        return preset
+
     text = f"{(item.get('title') or '').strip()} {(item.get('summary') or '').strip()}".lower()
     for category, keywords in CATEGORIES.items():
         for keyword in keywords:
@@ -48,16 +64,73 @@ def classify_news(item: dict) -> str:
     return "其他"
 
 
-def build_structured_digest(items: list[dict]) -> str:
+def markdown_link_to_text_and_url(text: str) -> tuple[str, str]:
+    match = re.search(r"\[([^\]]+)\]\((https?://[^)]+)\)", text)
+    if not match:
+        return text.strip(), ""
+    return match.group(1).strip(), match.group(2).strip()
+
+
+def extract_summary_points(summary: str, max_points: int = 2) -> list[str]:
+    if not summary or max_points <= 0:
+        return []
+
+    text = unescape(summary)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</(p|li|h\d)>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    if not text:
+        return []
+
+    candidates = re.split(r"[；;。.!?！？]\s*", text)
+    points = []
+    for seg in candidates:
+        seg = seg.strip(" -•\t\n\r")
+        if len(seg) < 10:
+            continue
+        if seg in points:
+            continue
+        points.append(seg)
+        if len(points) >= max_points:
+            break
+
+    return points
+
+
+def build_structured_digest(items: list[dict], source_links: list[str] | None = None) -> str:
     grouped = {category: [] for category in CATEGORIES}
     grouped["其他"] = []
+    category_counter: dict[str, int] = {}
 
     for item in items:
         category = classify_news(item)
+        if category_counter.get(category, 0) >= MAX_NEWS_PER_CATEGORY:
+            continue
+
         title = (item.get("title") or "(无标题)").strip()
-        grouped.setdefault(category, []).append(f"- {title}")
+        link = (item.get("link") or "").strip()
+        published = (item.get("published") or "").strip()
+        summary = (item.get("summary") or "").strip()
+
+        title_line = f"- [{title}]({link})" if link else f"- {title}"
+        if published:
+            title_line += f"（{published}）"
+
+        detail_lines = [title_line]
+        for point in extract_summary_points(summary, DIGEST_POINTS_PER_ITEM):
+            if point == title:
+                continue
+            detail_lines.append(f"  - {point}")
+
+        grouped.setdefault(category, []).append("\n".join(detail_lines))
+        category_counter[category] = category_counter.get(category, 0) + 1
 
     sections = [LEAD_SENTENCE]
+    if source_links:
+        sections.append("来源：" + " | ".join([f"[原文]({u})" for u in source_links]))
+
     for category in [*CATEGORIES.keys(), "其他"]:
         news_lines = grouped.get(category, [])
         if news_lines:
@@ -67,7 +140,6 @@ def build_structured_digest(items: list[dict]) -> str:
     return "\n\n".join(sections)
 
 
-# ---------------- 状态读写（去重） ----------------
 def load_state():
     if not os.path.exists(STATE_FILE):
         return {"last_id": ""}
@@ -81,83 +153,103 @@ def save_state(state):
 
 
 def entry_id(entry):
-    # 尽量稳定地取唯一标识
     return getattr(entry, "id", None) or getattr(entry, "guid", None) or getattr(entry, "link", "")
 
 
-# ---------------- 飞书推送（卡片） ----------------
-def format_item_content(title: str, link: str, summary: str) -> str:
-    """格式化单条推送内容，优先把 AI 早报标题拆成更易读的多行。"""
-    content = title.strip() or "(无标题)"
-
-    # 兼容「YYYY-MM-DD - AI 早报 ... 概览 ... #1 ... #2」格式
-    match = re.match(r"^(\d{4}-\d{2}-\d{2})\s*-\s*AI\s*早报", content)
-    if match:
-        date = match.group(1)
-        lines = [f"{date} - AI 早报"]
-
-        # 优先展示“概览”后的分段内容
-        overview = content.split("概览", 1)[1].strip() if "概览" in content else ""
-        if overview:
-            for seg in re.finditer(r"(.*?)(?:\s*#(\d+))(?:\s+|$)", overview):
-                text = (seg.group(1) or "").strip()
-                idx = seg.group(2)
-                if text and idx:
-                    lines.append(f"{text} #{idx}")
-
-        if len(lines) > 1:
-            content = "\n".join(lines)
-
-    if link:
-        content = f"[{content}]({link})"
-
-    if INCLUDE_SUMMARY and summary:
-        if len(summary) > SUMMARY_MAX_LEN:
-            summary = summary[:SUMMARY_MAX_LEN] + "…"
-        content += f"\n{summary}"
-
-    return content
+def title_to_date(title: str) -> str:
+    match = re.search(r"(\d{4}-\d{2}-\d{2})", title or "")
+    return match.group(1) if match else ""
 
 
-def feishu_send_card(card_title: str, items: list[dict], custom_markdown: str | None = None):
-    """
-    items: [{"title": "...", "link": "...", "summary": "..."}]
-    """
+def candidate_markdown_urls(entry) -> list[str]:
+    candidates = []
+    title = getattr(entry, "title", "") or ""
+    date_str = title_to_date(title)
+    link = (getattr(entry, "link", "") or "").strip()
+
+    if date_str:
+        candidates.append(f"https://raw.githubusercontent.com/imjuya/juya-ai-daily/main/reports/ai_digest_{date_str}.md")
+
+    if "github.com/imjuya/juya-ai-daily/blob/" in link:
+        candidates.append(link.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/"))
+
+    if link.endswith(".md"):
+        candidates.append(link)
+
+    # 去重并保留顺序
+    seen = set()
+    ordered = []
+    for u in candidates:
+        if u not in seen:
+            ordered.append(u)
+            seen.add(u)
+    return ordered
+
+
+def fetch_original_digest_items(entry) -> tuple[list[dict], str]:
+    for url in candidate_markdown_urls(entry):
+        try:
+            resp = requests.get(url, timeout=TIMEOUT)
+            if resp.status_code != 200 or not resp.text.strip():
+                continue
+            items = parse_digest_markdown(resp.text, getattr(entry, "published", "") or "")
+            if items:
+                return items, url
+        except requests.RequestException:
+            continue
+    return [], ""
+
+
+def parse_digest_markdown(markdown_text: str, published: str = "") -> list[dict]:
+    items = []
+    current_category = ""
+
+    for raw_line in markdown_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        heading_match = re.match(r"^##\s+(.+)$", line)
+        if heading_match:
+            heading = heading_match.group(1).strip()
+            current_category = HEADING_TO_CATEGORY.get(heading, heading)
+            continue
+
+        bullet_match = re.match(r"^-\s+(.+)$", line)
+        if not bullet_match:
+            continue
+
+        bullet_text = bullet_match.group(1).strip()
+        title, link = markdown_link_to_text_and_url(bullet_text)
+        cleaned = re.sub(r"\[([^\]]+)\]\((https?://[^)]+)\)", r"\1", bullet_text).strip()
+
+        items.append({
+            "title": title or cleaned,
+            "link": link,
+            "summary": cleaned,
+            "published": published,
+            "category": current_category or "其他",
+        })
+
+    return items
+
+
+def feishu_send_card(card_title: str, custom_markdown: str):
     if not FEISHU_WEBHOOK:
         raise RuntimeError("Missing FEISHU_WEBHOOK (set it in GitHub Secrets).")
-
-    elements = []
-    if custom_markdown is not None:
-        elements.append({
-            "tag": "div",
-            "text": {"tag": "lark_md", "content": custom_markdown}
-        })
-    else:
-        for item in items:
-            title = item.get("title", "(无标题)")
-            link = item.get("link", "")
-            summary = (item.get("summary") or "").strip()
-
-            md = format_item_content(title=title, link=link, summary=summary)
-
-            elements.append({
-                "tag": "div",
-                "text": {"tag": "lark_md", "content": md}
-            })
 
     payload = {
         "msg_type": "interactive",
         "card": {
             "header": {"title": {"tag": "plain_text", "content": card_title}},
-            "elements": elements
-        }
+            "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": custom_markdown}}],
+        },
     }
 
     resp = requests.post(FEISHU_WEBHOOK, json=payload, timeout=TIMEOUT)
     resp.raise_for_status()
 
 
-# ---------------- 主逻辑 ----------------
 def main():
     state = load_state()
     last_id = state.get("last_id", "")
@@ -166,57 +258,52 @@ def main():
     entries = getattr(feed, "entries", []) or []
 
     if not entries:
-        feishu_send_card("RSS 机器人", [{
-            "title": "未获取到内容",
-            "link": RSS_URL,
-            "summary": "请检查 RSS 链接是否可访问，或稍后再试。"
-        }])
+        feishu_send_card("RSS 机器人", f"未获取到内容，请检查 RSS：{RSS_URL}")
         return
 
-    # 选择本次要推送的条目列表
     if FORCE_SEND:
-        # 手动测试：忽略去重，强制推最新 N 条
-        new_entries = entries[:max(1, FORCE_ITEMS)]
+        new_entries = entries[: max(1, FORCE_ITEMS)]
     else:
-        # 正常：只推送 last_id 之后的新内容
         new_entries = []
         for e in entries:
             if entry_id(e) == last_id:
                 break
             new_entries.append(e)
 
-        # 首次运行只推 1 条，防止刷屏
         if not last_id:
             new_entries = new_entries[:1]
         else:
             new_entries = new_entries[:MAX_ITEMS_PER_RUN]
 
-    # 没有新内容：默认不发（除非 ALWAYS_NOTIFY=1）
     if not new_entries:
         if ALWAYS_NOTIFY:
-            feishu_send_card("AI早报更新", [{
-                "title": "暂无更新",
-                "link": RSS_URL,
-                "summary": "本次运行未发现新条目。"
-            }])
+            feishu_send_card("AI早报更新", "暂无更新")
         return
 
-    # 为了阅读体验：按旧->新展示（RSS 通常是新->旧）
     new_entries.reverse()
 
-    items = []
+    digest_items = []
+    source_links = []
+
     for e in new_entries:
+        parsed_items, source_url = fetch_original_digest_items(e)
+        if parsed_items:
+            digest_items.extend(parsed_items)
+            if source_url:
+                source_links.append(source_url)
+            continue
+
+        # fallback：网络或解析失败时，至少保证有基础可读信息
         title = getattr(e, "title", "(无标题)")
         link = getattr(e, "link", "")
         summary = (getattr(e, "summary", "") or "").strip()
-        items.append({"title": title, "link": link, "summary": summary})
+        published = (getattr(e, "published", "") or "").strip()
+        digest_items.append({"title": title, "link": link, "summary": summary, "published": published})
 
-    # 卡片标题：强制推送时标记为“测试”
     card_title = "AI早报更新（测试）" if FORCE_SEND else "AI早报更新"
-    digest = build_structured_digest(items)
-    feishu_send_card(card_title, [], custom_markdown=digest)
+    digest = build_structured_digest(digest_items, source_links=source_links)
+    feishu_send_card(card_title, digest)
 
-    # 更新状态：记录 RSS 当前最新的一条（entries[0] 是最新）
     state["last_id"] = entry_id(entries[0])
     save_state(state)
 
