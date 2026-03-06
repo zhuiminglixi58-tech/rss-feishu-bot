@@ -166,13 +166,13 @@ def generate_image(issue, sections, output_path="daily_report.png"):
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 800, "height": 600})
+        page = browser.new_page(viewport={"width": 1600, "height": 1200})
         page.goto(f"file://{os.path.abspath(html_path)}")
         page.wait_for_timeout(500)
 
         # 截取完整页面高度
         height = page.evaluate("document.body.scrollHeight")
-        page.set_viewport_size({"width": 800, "height": height})
+        page.set_viewport_size({"width": 1600, "height": height})
         page.screenshot(path=output_path, full_page=True)
         browser.close()
 
