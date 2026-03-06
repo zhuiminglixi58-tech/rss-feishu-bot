@@ -2,11 +2,11 @@ name: AI Daily to Feishu
 
 on:
   schedule:
-    - cron: '0 1 * * *'   # 北京时间每天早上 9:00
+    - cron: '0 1 * * *'
   workflow_dispatch:
     inputs:
       force_send:
-        description: '强制推送（测试用）'
+        description: 'Force push for testing'
         required: false
         default: 'false'
 
@@ -27,12 +27,5 @@ jobs:
       - name: Push to Feishu
         env:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # 自动提供，无需手动设置
-        run: python rss_to_feishu.py   # 保持原文件名不变
-```
-
----
-
-### 3️⃣ `requirements.txt` 简化为
-```
-requests
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python rss_to_feishu.py
