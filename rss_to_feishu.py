@@ -43,7 +43,8 @@ def get_latest_issue():
 def parse_markdown(body):
     """
     解析 Issue Markdown，按 ## 分类提取条目。
-    跳过 SKIP_SECTIONS 中定义的章节（如"概览"）。
+    每个条目保留第一个链接 URL，用于生成可点击箭头。
+    返回: { 分类名: [ {"text": str, "url": str|None} ] }
     """
     sections = {}
     current_section = None
@@ -56,24 +57,30 @@ def parse_markdown(body):
         if line.startswith('## '):
             title = line[3:].strip()
             if title in SKIP_SECTIONS:
-                current_section = None  # 跳过该分类
+                current_section = None
             else:
                 current_section = title
                 sections[current_section] = []
 
         elif line.startswith('###'):
-            continue  # 忽略三级标题
+            continue
 
         elif (line.startswith('- ') or line.startswith('* ')) and current_section is not None:
-            text = line[2:].strip()
-            # 去掉 Markdown 链接 [文字](url) → 文字
-            text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+            raw = line[2:].strip()
+
+            # 提取第一个链接 URL
+            url_match = re.search(r'\(([^)]+)\)', raw)
+            url = url_match.group(1) if url_match else None
+
+            # 提取所有 [文字](url) 中的文字部分
+            text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', raw)
             # 去掉行内代码
             text = re.sub(r'`[^`]+`', '', text).strip()
             # 去掉末尾的 #数字 标签
             text = re.sub(r'\s*#\d+\s*$', '', text).strip()
+
             if text:
-                sections[current_section].append(text)
+                sections[current_section].append({"text": text, "url": url})
 
     return sections
 
@@ -86,10 +93,20 @@ def build_feishu_card(issue, sections):
     for title, items in sections.items():
         if not items:
             continue
+
         display_title = EMOJI_MAP.get(title, f"📌 {title}")
         overview_lines.append(f"**{display_title}**")
+
         for item in items:
-            overview_lines.append(f"• {item}")
+            text = item["text"]
+            url = item["url"]
+            if url:
+                # 文字 + 可点击的 ↗ 箭头链接
+                line = f"• {text} [↗]({url})"
+            else:
+                line = f"• {text}"
+            overview_lines.append(line)
+
         overview_lines.append("")  # 分类间空行
 
     elements.append({
