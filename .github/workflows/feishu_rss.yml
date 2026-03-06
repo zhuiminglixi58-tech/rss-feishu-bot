@@ -1,66 +1,38 @@
-name: RSS to Feishu
+name: AI Daily to Feishu
 
 on:
   schedule:
-    - cron: "0 1 * * *" # 每天 UTC 01:00（北京时间 09:00）
+    - cron: '0 1 * * *'   # 北京时间每天早上 9:00
   workflow_dispatch:
     inputs:
       force_send:
-        description: "手动测试：强制推送最新内容（忽略 state.json）"
+        description: '强制推送（测试用）'
         required: false
-        default: "false"
-      force_items:
-        description: "手动测试：强制推送条数"
-        required: false
-        default: "3"
-
-permissions:
-  contents: write
+        default: 'false'
 
 jobs:
-  push_rss:
+  push:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+        run: pip install requests
 
-      - name: Run bot
+      - name: Push to Feishu
         env:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-          RSS_URL: "https://imjuya.github.io/juya-ai-daily/rss.xml"
-          MAX_ITEMS_PER_RUN: "5"
-          INCLUDE_SUMMARY: "1"
-          SUMMARY_MAX_LEN: "140"
-          FORCE_SEND: ${{ github.event.inputs.force_send || 'false' }}
-          FORCE_ITEMS: ${{ github.event.inputs.force_items || '3' }}
-        run: |
-          python rss_to_feishu.py
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # 自动提供，无需手动设置
+        run: python rss_to_feishu.py   # 保持原文件名不变
+```
 
-      - name: Commit state.json
-        run: |
-          if [ ! -f state.json ]; then
-            echo "state.json not generated; skip commit."
-            exit 0
-          fi
+---
 
-          if git diff --quiet -- state.json; then
-            echo "No state changes to commit."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add state.json
-          git commit -m "chore: update RSS state"
-          git push
+### 3️⃣ `requirements.txt` 简化为
+```
+requests
