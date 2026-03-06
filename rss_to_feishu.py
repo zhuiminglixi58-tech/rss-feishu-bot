@@ -140,6 +140,7 @@ def build_structured_digest(items: list[dict], source_links: list[str] | None = 
     return "\n\n".join(sections)
 
 
+# ---------------- 状态读写（去重） ----------------
 def load_state():
     if not os.path.exists(STATE_FILE):
         return {"last_id": ""}
@@ -298,7 +299,12 @@ def main():
         link = getattr(e, "link", "")
         summary = (getattr(e, "summary", "") or "").strip()
         published = (getattr(e, "published", "") or "").strip()
-        digest_items.append({"title": title, "link": link, "summary": summary, "published": published})
+        digest_items.append({
+            "title": title,
+            "link": link,
+            "summary": summary,
+            "published": published,
+        })
 
     card_title = "AI早报更新（测试）" if FORCE_SEND else "AI早报更新"
     digest = build_structured_digest(digest_items, source_links=source_links)
