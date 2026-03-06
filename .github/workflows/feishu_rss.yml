@@ -34,9 +34,10 @@ jobs:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          IMGBB_KEY: ${{ secrets.IMGBB_KEY }}
         run: python rss_to_feishu.py
 
-      - name: Upload daily image
+      - name: Upload daily image as artifact
         uses: actions/upload-artifact@v4
         with:
           name: daily-report-image
