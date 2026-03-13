@@ -222,7 +222,6 @@ def build_analysis_card(analysis):
     """构建 AI 解读飞书卡片"""
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # 把解读文字按小标题分段，转成飞书 Markdown
     content = analysis.strip()
 
     return {
@@ -325,6 +324,7 @@ def main():
 
     elif FEISHU_WEBHOOK and not KIMI_API_KEY:
         print("跳过 AI 解读：未配置 KIMI_API_KEY")
+
 
 if __name__ == "__main__":
     main()
