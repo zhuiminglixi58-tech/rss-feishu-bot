@@ -1,16 +1,11 @@
 import requests
 import re
 import os
-import base64
 from datetime import datetime
 
 # ===== Config =====
 GITHUB_REPO       = "imjuya/juya-ai-daily"
 FEISHU_WEBHOOK    = os.environ.get("FEISHU_WEBHOOK", "")
-SERVERCHAN_KEY    = os.environ.get("SERVERCHAN_KEY", "")
-FEISHU_APP_ID     = os.environ.get("FEISHU_APP_ID", "")
-FEISHU_APP_SECRET = os.environ.get("FEISHU_APP_SECRET", "")
-FEISHU_CHAT_ID    = os.environ.get("FEISHU_CHAT_ID", "")
 KIMI_API_KEY      = os.environ.get("KIMI_API_KEY", "")
 
 EMOJI_MAP = {
@@ -219,80 +214,6 @@ def build_feishu_card(issue, sections):
     }
 
 
-# ===== Server酱 =====
-
-def push_to_serverchan(issue, sections):
-    today = datetime.now().strftime("%Y-%m-%d")
-    lines = []
-    for title, items in sections.items():
-        if not items:
-            continue
-        display_title = EMOJI_MAP.get(title, f"📌 {title}")
-        lines.append(f"### {display_title}")
-        for item in items:
-            text = item["text"]
-            url = item["url"]
-            lines.append(f"- [{text}][link]({url})" if url else f"- {text}")
-        lines.append("")
-    lines.append(f"---\n[📖 查看完整原文]({issue['html_url']})")
-
-    resp = requests.post(
-        f"https://sctapi.ftqq.com/{SERVERCHAN_KEY}.send",
-        data={"title": f"🤖 AI 早报 · {today}", "desp": "\n".join(lines).strip()},
-        timeout=10
-    )
-    print("Server酱推送结果:", resp.json())
-
-
-# ===== 飞书应用 API（发图片）=====
-
-def get_feishu_token():
-    resp = requests.post(
-        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
-        json={"app_id": FEISHU_APP_ID, "app_secret": FEISHU_APP_SECRET},
-        timeout=10
-    )
-    data = resp.json()
-    token = data.get("tenant_access_token", "")
-    print(f"飞书 token: {'成功' if token else '失败'}")
-    return token
-
-
-def upload_image_to_feishu(image_path, token):
-    with open(image_path, "rb") as f:
-        resp = requests.post(
-            "https://open.feishu.cn/open-apis/im/v1/images",
-            headers={"Authorization": f"Bearer {token}"},
-            data={"image_type": "message"},
-            files={"image": f},
-            timeout=30
-        )
-    data = resp.json()
-    if data.get("code") == 0:
-        image_key = data["data"]["image_key"]
-        print(f"图片上传成功: {image_key}")
-        return image_key
-    else:
-        print(f"图片上传失败: {data}")
-        return None
-
-
-def send_image_to_feishu(image_key, token):
-    resp = requests.post(
-        "https://open.feishu.cn/open-apis/im/v1/messages",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        params={"receive_id_type": "chat_id"},
-        json={
-            "receive_id": FEISHU_CHAT_ID,
-            "msg_type": "image",
-            "content": f'{{"image_key": "{image_key}"}}'
-        },
-        timeout=15
-    )
-    data = resp.json()
-    print(f"飞书图片发送: {data.get('code')} {data.get('msg','')}")
-
-
 # ===== 主流程 =====
 
 def main():
@@ -327,24 +248,6 @@ def main():
 
     elif FEISHU_WEBHOOK and not KIMI_API_KEY:
         print("跳过 AI 解读：未配置 KIMI_API_KEY")
-
-    # ③ Server酱推送
-    if SERVERCHAN_KEY:
-        push_to_serverchan(issue, sections)
-
-    # ④ 生成长图 → 上传飞书 → 发送图片
-    if FEISHU_APP_ID and FEISHU_APP_SECRET and FEISHU_CHAT_ID:
-        try:
-            from generate_image import generate_image
-            img_path = generate_image(issue, sections, "daily_report.png")
-            token = get_feishu_token()
-            if token:
-                image_key = upload_image_to_feishu(img_path, token)
-                if image_key:
-                    send_image_to_feishu(image_key, token)
-        except Exception as e:
-            print(f"生图/推图失败: {e}")
-
 
 if __name__ == "__main__":
     main()
