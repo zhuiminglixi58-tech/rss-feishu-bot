@@ -1,13 +1,13 @@
 # rss-feishu-bot
 
-Push RSS updates to Feishu via GitHub Actions.
+Fetch latest AI Daily issue and push digest cards to Feishu via GitHub Actions.
 
 ## 功能
 
 - 定时拉取 RSS 并推送到飞书群机器人。
 - 通过 `state.json` 记录上次推送位置，避免重复发送。
 - 支持手动触发“强制推送”用于测试。
-- 支持推送摘要（可配置长度）。
+- 支持用 Kimi 生成第二条「AI 解读」卡片（可选）。
 
 ## 使用方式
 
@@ -20,19 +20,13 @@ Push RSS updates to Feishu via GitHub Actions.
    - `force_send`：是否忽略 `state.json` 强制发送。
    - `force_items`：强制发送条数。
 
-## 可选环境变量
+## 环境变量
 
-脚本 `rss_to_feishu.py` 支持以下环境变量：
+脚本 `rss_to_feishu.py` 当前使用以下环境变量：
 
-- `RSS_URL`（默认：`https://imjuya.github.io/juya-ai-daily/rss.xml`）
-- `MAX_ITEMS_PER_RUN`（默认：`5`）
-- `INCLUDE_SUMMARY`（默认：`0`）
-- `SUMMARY_MAX_LEN`（默认：`140`）
-- `ALWAYS_NOTIFY`（默认：`0`）
-- `FORCE_SEND`（默认：`false`）
-- `FORCE_ITEMS`（默认：`3`）
-- `TIMEOUT`（默认：`15`）
-- `KIMI_API_KEY`（用于生成 AI 解读，默认：空）
+- `FEISHU_WEBHOOK`：飞书机器人 Webhook（必填）
+- `KIMI_API_KEY`：Kimi（Moonshot）API Key（可选，用于生成 AI 解读）
+- `GITHUB_TOKEN`：GitHub Token（可选，用于提升 API 限额）
 
 ## 本地运行
 

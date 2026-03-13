@@ -22,20 +22,12 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install requests playwright
+        run: pip install requests
 
-      - name: Install Playwright browser
-        run: playwright install chromium --with-deps
-
-      - name: Push to Feishu and generate image
+      - name: Push to Feishu
         env:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
-          IMGBB_KEY: ${{ secrets.IMGBB_KEY }}
-          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
-          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
-          FEISHU_CHAT_ID: ${{ secrets.FEISHU_CHAT_ID }}
           KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
         run: python rss_to_feishu.py
 
@@ -48,9 +40,3 @@ jobs:
           git commit -m "chore: keep workflow active" || echo "nothing to commit"
           git push
 
-      - name: Upload daily image as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: daily-report-image
-          path: daily_report.png
-          retention-days: 7
