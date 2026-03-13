@@ -31,6 +31,7 @@ Push RSS updates to Feishu via GitHub Actions.
 - `FORCE_SEND`（默认：`false`）
 - `FORCE_ITEMS`（默认：`3`）
 - `TIMEOUT`（默认：`15`）
+- `KIMI_API_KEY`（用于生成 AI 解读，默认：空）
 
 ## 本地运行
 

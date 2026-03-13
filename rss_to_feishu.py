@@ -11,7 +11,7 @@ SERVERCHAN_KEY    = os.environ.get("SERVERCHAN_KEY", "")
 FEISHU_APP_ID     = os.environ.get("FEISHU_APP_ID", "")
 FEISHU_APP_SECRET = os.environ.get("FEISHU_APP_SECRET", "")
 FEISHU_CHAT_ID    = os.environ.get("FEISHU_CHAT_ID", "")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+KIMI_API_KEY      = os.environ.get("KIMI_API_KEY", "")
 
 EMOJI_MAP = {
     "要闻":            "🗞️ 要闻",
@@ -80,13 +80,13 @@ def extract_overview(body):
     return sections
 
 
-# ===== Claude AI 解读 =====
+# ===== Kimi AI 解读 =====
 
 def generate_ai_analysis(sections):
-    """调用 Claude API 对今日新闻生成解读"""
+    """调用 Kimi API 对今日新闻生成解读"""
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # 整理新闻内容给 Claude
+    # 整理新闻内容给 Kimi
     news_text = ""
     for title, items in sections.items():
         if not items:
@@ -112,23 +112,29 @@ def generate_ai_analysis(sections):
 - 用"今日速览""趋势洞察""对你的影响"作为小标题"""
 
     resp = requests.post(
-        "https://api.anthropic.com/v1/messages",
+        "https://api.moonshot.cn/v1/chat/completions",
         headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
+            "Authorization": f"Bearer {KIMI_API_KEY}",
+            "Content-Type": "application/json"
         },
         json={
-            "model": "claude-sonnet-4-20250514",
+            "model": "moonshot-v1-8k",
+            "temperature": 0.6,
             "max_tokens": 1024,
-            "messages": [{"role": "user", "content": prompt}]
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "你是一名中文科技资讯分析师，擅长把复杂 AI 新闻讲清楚。"
+                },
+                {"role": "user", "content": prompt}
+            ]
         },
         timeout=60
     )
 
     data = resp.json()
-    if data.get("content"):
-        analysis = data["content"][0]["text"]
+    if data.get("choices"):
+        analysis = data["choices"][0]["message"]["content"]
         print("AI 解读生成成功")
         return analysis
     else:
@@ -163,7 +169,7 @@ def build_analysis_card(analysis):
                     "tag": "div",
                     "text": {
                         "tag": "lark_md",
-                        "content": "_以上解读由 Claude AI 自动生成，仅供参考_"
+                        "content": "_以上解读由 Kimi AI 自动生成，仅供参考_"
                     }
                 }
             ]
@@ -307,7 +313,7 @@ def main():
         print("飞书早报卡片:", resp.json().get("msg", ""))
 
     # ② 推送飞书 AI 解读卡片（第二条消息）
-    if FEISHU_WEBHOOK and ANTHROPIC_API_KEY:
+    if FEISHU_WEBHOOK and KIMI_API_KEY:
         print("正在生成 AI 解读...")
         analysis = generate_ai_analysis(sections)
         if analysis:
