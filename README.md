@@ -14,6 +14,7 @@ Push RSS updates to Feishu via GitHub Actions.
 1. Fork/Clone 本仓库。
 2. 在 GitHub 仓库 `Settings -> Secrets and variables -> Actions` 中添加：
    - `FEISHU_WEBHOOK`: 飞书机器人 Webhook 地址。
+   - `KIMI_API_KEY`: Kimi（Moonshot）API Key（用于生成 AI 解读）。
 3. 启用 Actions，工作流会每天北京时间 09:00 自动执行。
 4. 你也可以在 Actions 页面手动 `Run workflow`，并通过输入项控制：
    - `force_send`：是否忽略 `state.json` 强制发送。
@@ -31,6 +32,7 @@ Push RSS updates to Feishu via GitHub Actions.
 - `FORCE_SEND`（默认：`false`）
 - `FORCE_ITEMS`（默认：`3`）
 - `TIMEOUT`（默认：`15`）
+- `KIMI_API_KEY`（用于生成 AI 解读，默认：空）
 
 ## 本地运行
 
