@@ -1,6 +1,7 @@
 import requests
 import re
 import os
+import time
 from datetime import datetime
 
 # ===== Config =====
@@ -187,35 +188,59 @@ ChatGPT：
 - ChatGPT：功能1……；功能2……；对日常使用……
 - 其他好用产品：……"""
 
-    resp = requests.post(
-        "https://api.moonshot.cn/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {KIMI_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": "moonshot-v1-8k",
-            "temperature": 0.6,
-            "max_tokens": 1024,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "你是一名中文科技资讯分析师，擅长把复杂 AI 新闻讲清楚。"
-                },
-                {"role": "user", "content": prompt}
-            ]
-        },
-        timeout=60
-    )
+    max_retries = 3
+    base_delay_seconds = 2
 
-    data = resp.json()
-    if data.get("choices"):
-        analysis = data["choices"][0]["message"]["content"]
-        print("AI 解读生成成功")
-        return analysis
-    else:
-        print("AI 解读生成失败:", data)
-        return None
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.post(
+                "https://api.moonshot.cn/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {KIMI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "moonshot-v1-8k",
+                    "temperature": 0.6,
+                    "max_tokens": 1024,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "你是一名中文科技资讯分析师，擅长把复杂 AI 新闻讲清楚。"
+                        },
+                        {"role": "user", "content": prompt}
+                    ]
+                },
+                timeout=60
+            )
+
+            data = resp.json()
+            if data.get("choices"):
+                analysis = data["choices"][0]["message"]["content"]
+                print("AI 解读生成成功")
+                return analysis
+
+            error_type = data.get("error", {}).get("type", "")
+            should_retry = error_type in {
+                "engine_overloaded_error",
+                "rate_limit_reached_error",
+                "service_unavailable_error"
+            }
+            print(f"AI 解读生成失败（第 {attempt}/{max_retries} 次）:", data)
+
+            if attempt == max_retries or not should_retry:
+                return None
+
+        except requests.RequestException as exc:
+            print(f"调用 Kimi 接口异常（第 {attempt}/{max_retries} 次）: {exc}")
+            if attempt == max_retries:
+                return None
+
+        delay = base_delay_seconds * (2 ** (attempt - 1))
+        print(f"{delay} 秒后重试 AI 解读...")
+        time.sleep(delay)
+
+    return None
 
 
 def build_analysis_card(analysis):
