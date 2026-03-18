@@ -1,0 +1,26 @@
+name: GitHub Trending to Feishu
+
+on:
+  schedule:
+    - cron: '0 1 * * *'   # 北京时间 09:00
+  workflow_dispatch:
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Push GitHub Trending to Feishu
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+        run: python github_trending.py
