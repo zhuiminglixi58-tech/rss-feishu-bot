@@ -1,6 +1,7 @@
 import requests
 import re
 import os
+import sys
 import time
 from datetime import datetime
 
@@ -80,24 +81,67 @@ def extract_overview(body):
     return sections
 
 
+# ===== Industry News 读取 =====
+
+def read_industry_news() -> str | None:
+    “””读取 reports/ 目录下最新的 ai_digest_*.md 文件内容”””
+    reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), “reports”)
+    if not os.path.isdir(reports_dir):
+        return None
+    files = sorted(
+        [f for f in os.listdir(reports_dir) if f.startswith(“ai_digest_”) and f.endswith(“.md”)],
+        reverse=True
+    )
+    if not files:
+        return None
+    latest = os.path.join(reports_dir, files[0])
+    print(f”读取 Industry News: {files[0]}”)
+    with open(latest, encoding=”utf-8”) as f:
+        return f.read().strip()
+
+
 # ===== Kimi AI 解读 =====
 
-def generate_ai_analysis(sections):
-    """调用 Kimi API 对今日新闻生成解读"""
-    # 整理新闻内容给 Kimi
-    news_text = ""
+def generate_ai_analysis(sections, trending_repos=None, industry_news=None):
+    “””调用 Kimi API 综合三个信息源生成解读”””
+    # 信息源 1：橘子早报
+    news_text = “”
     for title, items in sections.items():
         if not items:
             continue
-        news_text += f"\n【{title}】\n"
+        news_text += f”\n【{title}】\n”
         for item in items:
-            news_text += f"- {item['text']}\n"
+            news_text += f”- {item['text']}\n”
 
-    prompt = f"""以下是今天的 AI 科技早报内容：
+    # 信息源 2：Industry News（商业视角行业动态）
+    industry_text = “”
+    if industry_news:
+        industry_text = f”\n\n【行业动态 · 商业视角】\n{industry_news}”
 
-{news_text}
+    # 信息源 3：GitHub trending
+    trending_text = “”
+    if trending_repos:
+        trending_text = “\n\n【GitHub 今日热门项目】\n”
+        for r in trending_repos[:15]:
+            lang = f”（{r['language']}）” if r.get(“language”) else “”
+            stars = f” ⭐+{r['stars_today']:,}” if r.get(“stars_today”) else “”
+            desc = f”：{r['description']}” if r.get(“description”) else “”
+            trending_text += f”- {r['full_name']}{lang}{stars}{desc}\n”
 
-请你作为一个“面向普通用户”的 AI 行业观察者，用简洁、清晰、适合飞书卡片阅读的中文，输出一份“今日 AI 解读”。
+    combined_input = news_text + industry_text + trending_text
+
+    sources_desc = “1. 橘子早报（AI 技术动态）”
+    if industry_news:
+        sources_desc += “\n2. Industry News（商业视角行业动态，含资本、伦理、产业政策）”
+    if trending_repos:
+        sources_desc += “\n3. GitHub Trending（今日热门开源项目）”
+
+    prompt = f”””以下是今天的多个信息源内容：
+{sources_desc}
+
+{combined_input}
+
+请你作为一个”面向普通用户”的 AI 行业观察者，用简洁、清晰、适合飞书卡片阅读的中文，输出一份”今日 AI 解读”，综合涵盖以上所有信息源。
 
 我的目标不是长分析，而是：分条展示、清晰可读、一眼能扫完，并且尽量贴近日常使用场景。
 
@@ -113,8 +157,14 @@ def generate_ai_analysis(sections):
 - 每条 1-2 句话，尽量短，适合快速阅读
 - 注意：这里可以优先选择行业影响最大的新闻，不要求覆盖 Claude 或 ChatGPT
 
+商业视角
+2. 从 Industry News 提炼 2-3 条商业层面的关键动态
+- 覆盖资本、产业政策、伦理监管等方向
+- 每条说明：发生了什么 + 对行业意味着什么
+- 如果没有提供 Industry News 数据，跳过此部分
+
 趋势洞察
-2. 这些新闻背后反映了哪些行业趋势
+3. 综合所有信息源，反映了哪些行业趋势
 - 必须分成 2-3 条 bullet，不要写成一整段
 - 每条只讲 1 个趋势
 - 每条都要包含两层意思：
@@ -123,7 +173,7 @@ def generate_ai_analysis(sections):
 - 每条 1-2 句话，语言直白，不要空泛
 
 对你的影响
-3. 从用户实际使用角度解读（重点部分）
+4. 从用户实际使用角度解读（重点部分）
 
 ⚠️ 本部分必须完整覆盖产品功能更新，并对重要程度进行星级排序。
 
@@ -175,8 +225,14 @@ ChatGPT（包含 OpenAI、ChatGPT、Codex 等）：
 - 但要说明：
   更新内容 + 使用场景 + 是否值得关注
 
+今日 GitHub 热门
+5. 从 GitHub 热门项目中挑出 2-3 个最值得关注的
+- 每条说明：项目名 + 是什么 + 对普通用户有什么用
+- 优先选 Python/AI 相关、普通人能用到的项目
+- 如果没有提供 GitHub 数据，跳过此部分
+
 额外要求：
-1. 全文控制在 300-450 字
+1. 全文控制在 350-500 字
 2. 必须全部分条展示
 3. 不允许出现长段落
 4. 用手机阅读友好的短句
@@ -184,7 +240,7 @@ ChatGPT（包含 OpenAI、ChatGPT、Codex 等）：
 6. 不要编造新闻
 7. Claude 和 ChatGPT 体系功能更新 **必须完整覆盖**
 8. 不允许漏掉 Codex / OpenAI 编程类更新
-9. 输出要有“帮我筛选”的感觉，而不是简单复述
+9. 输出要有”帮我筛选”的感觉，而不是简单复述
 
 请直接输出最终内容。
 不要解释思路。
@@ -342,10 +398,25 @@ def main():
         resp = requests.post(FEISHU_WEBHOOK, json=card, timeout=10)
         print("飞书早报卡片:", resp.json().get("msg", ""))
 
-    # ② 推送飞书 AI 解读卡片（第二条消息）
+    # ② 推送飞书 AI 解读卡片（综合三个信息源）
     if FEISHU_WEBHOOK and KIMI_API_KEY:
-        print("正在生成 AI 解读...")
-        analysis = generate_ai_analysis(sections)
+        # 读取 Industry News
+        industry_news = read_industry_news()
+        if not industry_news:
+            print("未找到 Industry News 文件，将跳过该信息源")
+
+        # 抓取 GitHub trending 数据
+        trending_repos = None
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from github_trending import fetch_trending_repos
+            print("正在抓取 GitHub trending 数据...")
+            trending_repos = fetch_trending_repos("", "daily")
+        except Exception as e:
+            print(f"GitHub trending 抓取失败，将跳过该信息源: {e}")
+
+        print("正在生成综合 AI 解读（橘子早报 + Industry News + GitHub trending）...")
+        analysis = generate_ai_analysis(sections, trending_repos, industry_news)
         if analysis:
             analysis_card = build_analysis_card(analysis)
             resp = requests.post(FEISHU_WEBHOOK, json=analysis_card, timeout=10)
