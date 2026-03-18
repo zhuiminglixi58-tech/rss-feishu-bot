@@ -64,10 +64,18 @@ def fetch_trending_repos(language: str = "", since: str = "daily") -> list[dict]
         re.DOTALL,
     )
 
-    for article in articles[:MAX_REPOS]:
+    for article in articles:
         repo = _parse_article(article)
-        if repo:
-            repos.append(repo)
+        if not repo:
+            continue
+        # 过滤赞助商占位项目（owner 为 sponsors）
+        owner = repo["full_name"].split("/")[0]
+        if owner.lower() == "sponsors":
+            print(f"跳过赞助商项目: {repo['full_name']}")
+            continue
+        repos.append(repo)
+        if len(repos) >= MAX_REPOS:
+            break
 
     print(f"解析到 {len(repos)} 个项目")
     return repos
@@ -152,34 +160,18 @@ def kimi_filter_repos(repos: list[dict]) -> str | None:
 
 {repo_text}
 
-请你作为一个编程新手导师，从中挑选 5 个最适合编程初学者（有 Python、SQL 基础）的项目。
+请从中挑选 5 个最值得关注的项目，优先选择：
+1. AI、大模型、Agent、RAG、多模态相关
+2. 解决真实痛点的开发工具
+3. 有技术突破的基础设施
 
-选择标准（按优先级）：
-1. Python 相关项目：学习资源、实用小工具、数据分析、自动化脚本
-2. SQL / 数据库相关：数据查询、可视化、数据处理工具
-3. AI / 大模型工具：用 Python 就能上手体验的 AI 应用
-4. 新手友好的学习资源：教程、练习项目、入门指南
-5. 实用小工具：安装简单、立竿见影、不需要复杂环境的项目
+每个项目严格按以下格式输出，不要多写任何内容：
 
-【排除】以下类型不适合新手，请不要选：
-- 底层系统、编译器、Rust/C++ 等低级语言项目
-- 需要复杂部署环境的基础设施
-- 纯前端框架或移动端开发
+**owner/repo**（语言）⭐ +stars数
+是什么：一句话，说清楚它能干什么（不超过20字）
+亮点：一句话，说清楚为什么值得看（不超过25字）
 
-输出格式要求（严格遵守）：
-- 每个项目单独一条，用以下固定结构：
-  **项目名**（编程语言）⭐ 今日新增stars数
-  是什么：用最通俗的中文一句话说清楚这个项目是什么
-  新手怎么用：1-2 句，告诉初学者这个项目能帮他做什么、怎么快速上手
-  举个应用案例：用一个具体的真实场景举例，比如"比如你想分析自己的微信账单，可以用它……"
-
-- 5 个项目之间用空行分隔
-- 不要加序号
-- 不要加总结段落
-- 不要编造信息，只基于提供的描述
-- 应用案例必须贴近日常生活或学习场景，不要写抽象的技术描述
-
-请直接输出，不要加任何开场白或结尾说明。
+5个项目之间空一行，不加序号，不加总结，不编造信息，直接输出。
 """
 
     max_retries = 3
@@ -198,7 +190,7 @@ def kimi_filter_repos(repos: list[dict]) -> str | None:
                     "messages": [
                         {
                             "role": "system",
-                            "content": "你是一名耐心的编程新手导师，擅长从编程初学者的视角出发，用简单易懂的中文介绍 GitHub 上适合新手的项目，尤其关注 Python、SQL、数据分析方向。",
+                            "content": "你是一名关注 AI 与开发工具的技术博主，擅长用简单的中文介绍 GitHub 上的有趣项目。",
                         },
                         {"role": "user", "content": prompt},
                     ],
@@ -271,7 +263,7 @@ def build_trending_card_with_ai(ai_content: str) -> dict:
                             f"[📊 查看完整 Trending →](https://github.com/trending"
                             f"{'/' + TRENDING_LANGUAGE if TRENDING_LANGUAGE else ''}"
                             f"?since={TRENDING_SINCE})"
-                            f"\n_由 Kimi AI 为 Python/SQL 新手从今日 Top {MAX_REPOS} 中筛选_"
+                            f"\n_由 Kimi AI 从今日 Top {MAX_REPOS} 中筛选_"
                         ),
                     },
                 },
