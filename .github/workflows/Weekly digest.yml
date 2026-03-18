@@ -1,0 +1,27 @@
+name: Weekly AI Digest to Feishu
+
+on:
+  schedule:
+    - cron: '0 9 * * 5'   # 每周五北京时间 17:00，适合周末延伸阅读
+  workflow_dispatch:
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests feedparser
+
+      - name: Generate and Push Weekly Digest
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+        run: python weekly_digest.py
