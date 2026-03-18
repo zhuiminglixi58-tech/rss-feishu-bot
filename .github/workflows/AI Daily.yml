@@ -2,7 +2,7 @@ name: AI Daily to Feishu
 
 on:
   schedule:
-    - cron: '0 1 * * *'   # 每天 UTC 01:00 = 北京时间 09:00
+    - cron: '0 1 * * *'   # 北京时间 09:00
   workflow_dispatch:
     inputs:
       force_send:
@@ -24,20 +24,12 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      # ① AI 早报（juya-ai-daily）
       - name: Push AI Daily to Feishu
         env:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
         run: python rss_to_feishu.py
-
-      # ② GitHub Trending 热门项目
-      - name: Push GitHub Trending to Feishu
-        env:
-          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
-        run: python github_trending.py
 
       - name: Keep workflow active
         run: |
