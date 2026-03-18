@@ -1,0 +1,26 @@
+name: Industry News to Feishu
+
+on:
+  schedule:
+    - cron: '30 1 * * *'   # 北京时间 09:30，比早报晚半小时
+  workflow_dispatch:
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests feedparser
+
+      - name: Push Industry News to Feishu
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+        run: python industry_news.py
