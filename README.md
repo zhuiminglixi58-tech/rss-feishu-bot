@@ -1,56 +1,47 @@
 # rss-feishu-bot
 
-每天自动推送三条飞书卡片的 AI 资讯机器人，数据来源涵盖 AI 早报、行业 RSS 动态、GitHub Trending，并通过 Kimi 生成综合解读。
+每天自动推送 AI 资讯到飞书群的机器人，覆盖早报、行业动态、GitHub Trending，并在每周五推送周报。
 
 ## 推送内容
 
-每天北京时间 09:00 自动触发，推送以下三条卡片：
+| 卡片 | 脚本 | 触发时间（北京时间） | 说明 |
+|---|---|---|---|
+| 🤖 AI 早报 + 🧠 AI 解读 | `rss_to_feishu.py` | 每天 09:00 | 开工前扫一眼 |
+| 📡 行业动态 | `industry_news.py` | 每天 12:00 | 午休碎片时间 |
+| 🔥 GitHub Trending | `github_trending.py` | 每天 18:00 | 下班前看技术项目 |
+| 📋 周报 | `weekly_digest.py` | 每周五 17:00 | 适合周末延伸阅读 |
 
-| 卡片 | 内容 | 触发时间 |
-|---|---|---|
-| 🤖 AI 早报 | 来自 [imjuya/juya-ai-daily](https://github.com/imjuya/juya-ai-daily) 的分类新闻概览 | 09:00 |
-| 🧠 今日 AI 解读 | Kimi 综合早报 + 行业动态 + GitHub Trending 生成解读 | 09:00（紧随早报） |
-| 📡 行业动态 | 36氪、机器之心、量子位、VentureBeat 等 6 个 RSS 源，经 Kimi 筛选 | 09:30 |
+## 数据来源
 
-> GitHub Trending 数据由 AI 解读卡片内联展示，不单独推送。
+- **AI 早报**：[imjuya/juya-ai-daily](https://github.com/imjuya/juya-ai-daily) GitHub Issues
+- **行业动态**：36氪、机器之心、量子位、VentureBeat、TechCrunch、The Verge 等 RSS 源，经 Kimi 筛选摘要
+- **GitHub Trending**：每日 Trending 项目，经 Kimi 解读
+- **周报**：汇总本周 `reports/` 目录内容，由 Kimi 生成综合解读
 
 ## 项目结构
 
 ```
-rss_to_feishu.py          # 主脚本：早报 + AI 综合解读
-industry_news.py          # RSS 行业动态抓取与推送
-github_trending.py        # GitHub Trending 抓取（供 rss_to_feishu.py 调用）
-reports/                  # industry_news.py 生成的 Markdown 报告（供解读引用）
+rss_to_feishu.py          # AI 早报 + AI 解读（调用 github_trending.py + reports/）
+industry_news.py          # 行业 RSS 动态
+github_trending.py        # GitHub Trending 抓取
+weekly_digest.py          # 周报生成
+reports/                  # 历史报告（供周报引用）
 .github/workflows/
-  AI Daily.yml            # 每天 09:00 运行 rss_to_feishu.py
-  Industry News.yml       # 每天 09:30 运行 industry_news.py
-  Github trending.yml     # 每天 09:00 单独推送 GitHub Trending（可选保留）
-```
-
-## 数据流
-
-```
-GitHub Issues API
-  └─→ rss_to_feishu.py
-        ├─→ 飞书：🤖 AI 早报卡片
-        └─→ (+ Kimi API + GitHub Trending + reports/)
-              └─→ 飞书：🧠 今日 AI 解读卡片
-
-6 个 RSS 源 (36氪 / 机器之心 / 量子位 / VentureBeat / TechCrunch / The Verge)
-  └─→ industry_news.py
-        └─→ Kimi 筛选
-              └─→ 飞书：📡 行业动态卡片
+  AI Daily.yml            # 09:00 每天
+  Industry News.yml       # 12:00 每天
+  Github trending.yml     # 18:00 每天
+  Weekly digest.yml       # 17:00 每周五
 ```
 
 ## 环境变量
+
+在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置：
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
 | `FEISHU_WEBHOOK` | 是 | 飞书机器人 Webhook 地址 |
 | `KIMI_API_KEY` | 推荐 | Moonshot Kimi API Key，未配置则跳过 AI 解读和筛选 |
-| `GITHUB_TOKEN` | 否 | 提高 GitHub API 请求限额 |
-
-在 GitHub 仓库 → Settings → Secrets and variables → Actions 中配置。
+| `GITHUB_TOKEN` | 否 | 提高 GitHub API 请求限额（Workflow 自动注入） |
 
 ## 本地运行
 
@@ -59,18 +50,9 @@ pip install -r requirements.txt
 
 export FEISHU_WEBHOOK='https://open.feishu.cn/open-apis/bot/v2/hook/xxx'
 export KIMI_API_KEY='your-kimi-api-key'
-export GITHUB_TOKEN='your-github-token'   # 可选
 
-# 推送早报 + AI 解读
-python rss_to_feishu.py
-
-# 推送行业动态
-python industry_news.py
-```
-
-## 依赖
-
-```
-requests
-feedparser
+python rss_to_feishu.py    # 早报 + AI 解读
+python industry_news.py    # 行业动态
+python github_trending.py  # GitHub Trending
+python weekly_digest.py    # 周报
 ```
