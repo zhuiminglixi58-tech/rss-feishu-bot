@@ -64,32 +64,24 @@ def fetch_trending_repos(language: str = "", since: str = "daily") -> list[dict]
         re.DOTALL,
     )
 
+    seen = set()
     for article in articles:
         repo = _parse_article(article)
         if not repo:
             continue
-        # 过滤赞助商占位项目（owner 为 sponsors）
-        owner = repo["full_name"].split("/")[0]
-        if owner.lower() == "sponsors":
-            print(f"跳过赞助商项目: {repo['full_name']}")
+        # 数据层去重
+        if repo["full_name"] in seen:
             continue
+        seen.add(repo["full_name"])
         repos.append(repo)
         if len(repos) >= MAX_REPOS:
             break
 
-    # 按今日新增 stars 降序排列
-    repos.sort(key=lambda r: r["stars_today"], reverse=True)
+    # 按总 stars 降序——更能反映项目成熟度和社区认可度
+    repos.sort(key=lambda r: r["total_stars"], reverse=True)
 
-    # 去重（防止同一项目出现多次）
-    seen = set()
-    unique_repos = []
-    for r in repos:
-        if r["full_name"] not in seen:
-            seen.add(r["full_name"])
-            unique_repos.append(r)
-
-    print(f"解析到 {len(unique_repos)} 个项目（已去重、按热度排序）")
-    return unique_repos
+    print(f"解析到 {len(repos)} 个项目（已去重、按总 stars 排序）")
+    return repos
 
 
 def _parse_article(html: str) -> dict | None:
@@ -143,6 +135,32 @@ def _parse_article(html: str) -> dict | None:
     }
 
 
+# ===== Kimi 输出去重 =====
+
+def _dedup_kimi_output(text: str) -> str:
+    """
+    Kimi 有时会在输出里重复同一个项目。
+    按空行切分成块，提取每块第一行的 owner/repo，去掉重复块。
+    """
+    blocks = re.split(r'\n{2,}', text.strip())
+    seen = set()
+    unique_blocks = []
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+        # 从第一行提取 owner/repo（格式：**owner/repo**...）
+        first_line = block.split('\n')[0]
+        m = re.search(r'\*\*([^*]+/[^*]+)\*\*', first_line)
+        key = m.group(1).strip() if m else first_line[:40]
+        if key in seen:
+            print(f"去重：跳过重复项目 {key}")
+            continue
+        seen.add(key)
+        unique_blocks.append(block)
+    return "\n\n".join(unique_blocks)
+
+
 # ===== Kimi 筛选与解读 =====
 
 def kimi_filter_repos(repos: list[dict]) -> str | None:
@@ -162,7 +180,7 @@ def kimi_filter_repos(repos: list[dict]) -> str | None:
             line += f"\n   描述：{r['description']}"
         if r["language"]:
             line += f"\n   语言：{r['language']}"
-        line += f"\n   今日新增 ⭐：{r['stars_today']:,}"
+        line += f"\n   总 ⭐：{r['total_stars']:,}　今日新增 ⭐：{r['stars_today']:,}"
         repo_lines.append(line)
 
     repo_text = "\n\n".join(repo_lines)
@@ -178,7 +196,7 @@ def kimi_filter_repos(repos: list[dict]) -> str | None:
 
 每个项目严格按以下格式输出，不要多写任何内容：
 
-**owner/repo**（语言）⭐ +stars数
+**owner/repo**（语言）⭐ 总stars · 今日+新增
 是什么：一句话，说清楚它能干什么（不超过20字）
 亮点：一句话，说清楚为什么值得看（不超过25字）
 
@@ -186,8 +204,7 @@ def kimi_filter_repos(repos: list[dict]) -> str | None:
 - 5个项目之间空一行
 - 不加序号，不加总结
 - 不编造信息
-- 每个项目只能出现一次，禁止重复
-- 按今日新增 stars 从高到低排列
+- 每个 owner/repo 只能出现一次，绝对禁止重复
 - 直接输出，无需开场白
 """
 
@@ -217,7 +234,8 @@ def kimi_filter_repos(repos: list[dict]) -> str | None:
 
             data = resp.json()
             if data.get("choices"):
-                result = data["choices"][0]["message"]["content"]
+                raw = data["choices"][0]["message"]["content"]
+                result = _dedup_kimi_output(raw)
                 print("Kimi 筛选完成")
                 return result
 
@@ -383,4 +401,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main()v
