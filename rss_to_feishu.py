@@ -84,64 +84,64 @@ def extract_overview(body):
 # ===== Industry News 读取 =====
 
 def read_industry_news() -> str | None:
-    “””读取 reports/ 目录下最新的 ai_digest_*.md 文件内容”””
-    reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), “reports”)
+    """Read the latest ai_digest_*.md file from the reports/ directory."""
+    reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
     if not os.path.isdir(reports_dir):
         return None
     files = sorted(
-        [f for f in os.listdir(reports_dir) if f.startswith(“ai_digest_”) and f.endswith(“.md”)],
+        [f for f in os.listdir(reports_dir) if f.startswith("ai_digest_") and f.endswith(".md")],
         reverse=True
     )
     if not files:
         return None
     latest = os.path.join(reports_dir, files[0])
-    print(f”读取 Industry News: {files[0]}”)
-    with open(latest, encoding=”utf-8”) as f:
+    print(f"读取 Industry News: {files[0]}")
+    with open(latest, encoding="utf-8") as f:
         return f.read().strip()
 
 
 # ===== Kimi AI 解读 =====
 
 def generate_ai_analysis(sections, trending_repos=None, industry_news=None):
-    “””调用 Kimi API 综合三个信息源生成解读”””
+    """调用 Kimi API 综合三个信息源生成解读"""
     # 信息源 1：橘子早报
-    news_text = “”
+    news_text = ""
     for title, items in sections.items():
         if not items:
             continue
-        news_text += f”\n【{title}】\n”
+        news_text += f"\n【{title}】\n"
         for item in items:
-            news_text += f”- {item['text']}\n”
+            news_text += f"- {item['text']}\n"
 
     # 信息源 2：Industry News（商业视角行业动态）
-    industry_text = “”
+    industry_text = ""
     if industry_news:
-        industry_text = f”\n\n【行业动态 · 商业视角】\n{industry_news}”
+        industry_text = f"\n\n【行业动态 · 商业视角】\n{industry_news}"
 
     # 信息源 3：GitHub trending
-    trending_text = “”
+    trending_text = ""
     if trending_repos:
-        trending_text = “\n\n【GitHub 今日热门项目】\n”
+        trending_text = "\n\n【GitHub 今日热门项目】\n"
         for r in trending_repos[:15]:
-            lang = f”（{r['language']}）” if r.get(“language”) else “”
-            stars = f” ⭐+{r['stars_today']:,}” if r.get(“stars_today”) else “”
-            desc = f”：{r['description']}” if r.get(“description”) else “”
-            trending_text += f”- {r['full_name']}{lang}{stars}{desc}\n”
+            lang = f"（{r['language']}）" if r.get("language") else ""
+            stars = f" ⭐+{r['stars_today']:,}" if r.get("stars_today") else ""
+            desc = f"：{r['description']}" if r.get("description") else ""
+            trending_text += f"- {r['full_name']}{lang}{stars}{desc}\n"
 
     combined_input = news_text + industry_text + trending_text
 
-    sources_desc = “1. 橘子早报（AI 技术动态）”
+    sources_desc = "1. 橘子早报（AI 技术动态）"
     if industry_news:
-        sources_desc += “\n2. Industry News（商业视角行业动态，含资本、伦理、产业政策）”
+        sources_desc += "\n2. Industry News（商业视角行业动态，含资本、伦理、产业政策）"
     if trending_repos:
-        sources_desc += “\n3. GitHub Trending（今日热门开源项目）”
+        sources_desc += "\n3. GitHub Trending（今日热门开源项目）"
 
-    prompt = f”””以下是今天的多个信息源内容：
+    prompt = f"""以下是今天的多个信息源内容：
 {sources_desc}
 
 {combined_input}
 
-请你作为一个”面向普通用户”的 AI 行业观察者，用简洁、清晰、适合飞书卡片阅读的中文，输出一份”今日 AI 解读”，综合涵盖以上所有信息源。
+请你作为一个"面向普通用户"的 AI 行业观察者，用简洁、清晰、适合飞书卡片阅读的中文，输出一份"今日 AI 解读"，综合涵盖以上所有信息源。
 
 我的目标不是长分析，而是：分条展示、清晰可读、一眼能扫完，并且尽量贴近日常使用场景。
 
@@ -240,12 +240,12 @@ ChatGPT（包含 OpenAI、ChatGPT、Codex 等）：
 6. 不要编造新闻
 7. Claude 和 ChatGPT 体系功能更新 **必须完整覆盖**
 8. 不允许漏掉 Codex / OpenAI 编程类更新
-9. 输出要有”帮我筛选”的感觉，而不是简单复述
+9. 输出要有"帮我筛选"的感觉，而不是简单复述
 
 请直接输出最终内容。
 不要解释思路。
 不要加开场白。
-不要加“当然可以”。
+不要加"当然可以"。
 不要添加任何额外说明。
 """
     max_retries = 3
