@@ -77,8 +77,19 @@ def fetch_trending_repos(language: str = "", since: str = "daily") -> list[dict]
         if len(repos) >= MAX_REPOS:
             break
 
-    print(f"解析到 {len(repos)} 个项目")
-    return repos
+    # 按今日新增 stars 降序排列
+    repos.sort(key=lambda r: r["stars_today"], reverse=True)
+
+    # 去重（防止同一项目出现多次）
+    seen = set()
+    unique_repos = []
+    for r in repos:
+        if r["full_name"] not in seen:
+            seen.add(r["full_name"])
+            unique_repos.append(r)
+
+    print(f"解析到 {len(unique_repos)} 个项目（已去重、按热度排序）")
+    return unique_repos
 
 
 def _parse_article(html: str) -> dict | None:
@@ -171,7 +182,13 @@ def kimi_filter_repos(repos: list[dict]) -> str | None:
 是什么：一句话，说清楚它能干什么（不超过20字）
 亮点：一句话，说清楚为什么值得看（不超过25字）
 
-5个项目之间空一行，不加序号，不加总结，不编造信息，直接输出。
+严格要求：
+- 5个项目之间空一行
+- 不加序号，不加总结
+- 不编造信息
+- 每个项目只能出现一次，禁止重复
+- 按今日新增 stars 从高到低排列
+- 直接输出，无需开场白
 """
 
     max_retries = 3
