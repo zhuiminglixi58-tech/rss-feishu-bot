@@ -414,6 +414,9 @@ def main():
         return
 
     print(f"Got: {issue['title']}")
+    print("===BODY START===")
+    print(issue['body'][:800] if issue['body'] else "BODY IS NONE")
+    print("===BODY END===")
     sections = extract_overview(issue['body'])
     print(f"Parsed {len(sections)} sections: {list(sections.keys())}")
 
