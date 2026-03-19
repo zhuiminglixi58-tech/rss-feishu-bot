@@ -1,3 +1,10 @@
+"""
+rss_to_feishu.py
+
+从 GitHub Issues 获取 AI 日报内容，结合 Industry News 和 GitHub Trending，
+调用 Kimi AI 生成解读，最终推送到飞书 Webhook。
+"""
+
 import requests
 import re
 import os
@@ -5,11 +12,12 @@ import sys
 import time
 from datetime import datetime
 
-# ===== Config =====
-GITHUB_REPO       = "imjuya/juya-ai-daily"
-FEISHU_WEBHOOK    = os.environ.get("FEISHU_WEBHOOK", "")
-KIMI_API_KEY      = os.environ.get("KIMI_API_KEY", "")
+# ===== 配置 =====
+GITHUB_REPO       = "imjuya/juya-ai-daily"           # 数据来源的 GitHub 仓库
+FEISHU_WEBHOOK    = os.environ.get("FEISHU_WEBHOOK", "")  # 飞书机器人 Webhook 地址
+KIMI_API_KEY      = os.environ.get("KIMI_API_KEY", "")    # Kimi AI API Key
 
+# 各分类对应的带 Emoji 显示标题
 EMOJI_MAP = {
     "要闻":            "🗞️ 要闻",
     "模型发布":         "🚀 模型发布",
@@ -30,6 +38,7 @@ EMOJI_MAP = {
 # ===== 数据获取 =====
 
 def get_latest_issue():
+    """从 GitHub API 获取指定仓库最新的一条 open issue。"""
     url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
     params = {"state": "open", "per_page": 1, "sort": "created", "direction": "desc"}
     headers = {"Accept": "application/vnd.github.v3+json"}
@@ -42,6 +51,17 @@ def get_latest_issue():
 
 
 def extract_overview(body):
+    """
+    从 issue body（Markdown 格式）中提取"概览"章节的内容。
+
+    Issue 格式：
+    - `# 概览` 一级标题标志概览开始
+    - `## 要闻` 等二级标题作为分类
+    - `- 条目` 列表作为新闻条目
+
+    返回：
+        dict，结构为 { 分类名: [{"text": str, "url": str|None}, ...] }
+    """
     sections = {}
     current_section = None
     in_overview = False
@@ -53,18 +73,28 @@ def extract_overview(body):
         line = line.strip()
         if not line:
             continue
-        if line.startswith('# ') and line[3:].strip() == '概览':
+
+        # 进入"概览"章节（一级标题 # 概览）
+        if line.startswith('# ') and line[2:].strip() == '概览':
             in_overview = True
             continue
-        if in_overview and line.startswith('# '):
+
+        # 遇到下一个一级标题，退出概览解析
+        if in_overview and line.startswith('# ') and line[2:].strip() != '概览':
             break
+
         if not in_overview:
             continue
+
+        # 二级标题作为分类名（## 要闻、## 模型发布 等）
         if line.startswith('## '):
-            current_section = line[4:].strip()
+            current_section = line[3:].strip()
             sections[current_section] = []
+        # 列表条目：提取文本和链接
         elif (line.startswith('- ') or line.startswith('* ')) and current_section is not None:
             raw = line[2:].strip()
+
+            # 从括号内容中提取第一个 http 链接
             url = None
             for m in re.finditer(r'\(([^)]+)\)', raw):
                 c = m.group(1)
@@ -72,10 +102,13 @@ def extract_overview(body):
                     url = c
                     break
 
+            # 去除 Markdown 链接语法，保留纯文本
             text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', raw)
             text = re.sub(r'\(https?://[^\s)]+\)', '', text)
             text = re.sub(r'`[^`]+`', '', text).strip()
+            # 去除末尾的 issue 编号（如 #42）
             text = re.sub(r'\s*#\d+\s*$', '', text).strip()
+            # 去除末尾的箭头/链接符号
             text = re.sub(r'\s*[↗→➜➚⇗🔗]+[\s\u3000]*$', '', text).strip()
 
             if text:
@@ -87,7 +120,9 @@ def extract_overview(body):
 # ===== Industry News 读取 =====
 
 def read_industry_news() -> str | None:
-    """Read the latest ai_digest_*.md file from the reports/ directory."""
+    """
+    读取 reports/ 目录下最新的 ai_digest_*.md 文件内容。
+    """
     reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
     if not os.path.isdir(reports_dir):
         return None
@@ -106,7 +141,9 @@ def read_industry_news() -> str | None:
 # ===== Kimi AI 解读 =====
 
 def generate_ai_analysis(sections, trending_repos=None, industry_news=None):
-    """调用 Kimi API 综合三个信息源生成解读"""
+    """
+    调用 Kimi API，综合三个信息源生成今日 AI 解读。
+    """
     # 信息源 1：橘子早报
     news_text = ""
     for title, items in sections.items():
@@ -116,7 +153,7 @@ def generate_ai_analysis(sections, trending_repos=None, industry_news=None):
         for item in items:
             news_text += f"- {item['text']}\n"
 
-    # 信息源 2：Industry News（商业视角行业动态）
+    # 信息源 2：Industry News
     industry_text = ""
     if industry_news:
         industry_text = f"\n\n【行业动态 · 商业视角】\n{industry_news}"
@@ -192,41 +229,31 @@ Claude：
   ⭐⭐⭐ 强烈建议关注（明显改变使用方式 / 效率提升巨大）
   ⭐⭐ 可以了解（对部分人群有用 / 中等提升）
   ⭐ 行业参考（偏技术或轻量更新）
-
 - 每条更新需要说明：
   1. 更新了什么能力
   2. 日常可以怎么用
   3. 是否值得普通用户关注
-
 - 如果当天没有 Claude 功能更新，明确写：
   Claude：今天没有明确的产品功能更新
 
 ChatGPT（包含 OpenAI、ChatGPT、Codex 等）：
 - 必须总结今天所有属于 OpenAI 产品体系的功能更新
-- 包括：
-  ChatGPT 产品能力
-  Codex / 编程能力
-  OpenAI API / 多模态能力
-  Agent / 自动化 / UI 能力
-
+- 包括：ChatGPT 产品能力、Codex / 编程能力、OpenAI API / 多模态能力、Agent / 自动化 / UI 能力
 - 每条更新必须加星级：
   ⭐⭐⭐ 强烈建议关注（普通用户马上能感知变化）
   ⭐⭐ 可以了解（对特定场景明显有用）
   ⭐ 行业参考（偏开发者或行业层面）
-
 - 每条更新需要说明：
   1. 更新了什么
   2. 日常能怎么用
   3. 是否值得关注
-
 - 如果当天没有 OpenAI 产品更新，明确写：
   ChatGPT：今天没有明确的产品功能更新
 
 其他好用产品：
 - 只挑选 2–3 个普通用户今天就可能用到的更新
 - 不需要打星级
-- 但要说明：
-  更新内容 + 使用场景 + 是否值得关注
+- 但要说明：更新内容 + 使用场景 + 是否值得关注
 
 今日 GitHub 热门
 5. 从 GitHub 热门项目中挑出 2-3 个最值得关注的
@@ -307,11 +334,8 @@ ChatGPT（包含 OpenAI、ChatGPT、Codex 等）：
 
 
 def build_analysis_card(analysis):
-    """构建 AI 解读飞书卡片"""
+    """构建 AI 解读飞书交互卡片。"""
     today = datetime.now().strftime("%Y-%m-%d")
-
-    content = analysis.strip()
-
     return {
         "msg_type": "interactive",
         "card": {
@@ -324,7 +348,7 @@ def build_analysis_card(analysis):
                     "tag": "div",
                     "text": {
                         "tag": "lark_md",
-                        "content": content
+                        "content": analysis.strip()
                     }
                 },
                 {"tag": "hr"},
@@ -343,6 +367,7 @@ def build_analysis_card(analysis):
 # ===== 飞书 Webhook 早报卡片 =====
 
 def build_feishu_card(issue, sections):
+    """构建 AI 早报飞书交互卡片。"""
     today = datetime.now().strftime("%Y-%m-%d")
     overview_lines = []
     for title, items in sections.items():
@@ -403,12 +428,10 @@ def main():
 
     # ② 推送飞书 AI 解读卡片（综合三个信息源）
     if FEISHU_WEBHOOK and KIMI_API_KEY:
-        # 读取 Industry News
         industry_news = read_industry_news()
         if not industry_news:
             print("未找到 Industry News 文件，将跳过该信息源")
 
-        # 抓取 GitHub trending 数据
         trending_repos = None
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
