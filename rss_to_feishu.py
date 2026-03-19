@@ -1,3 +1,10 @@
+"""
+rss_to_feishu.py
+
+从 GitHub Issues 获取 AI 日报内容，结合 Industry News 和 GitHub Trending，
+调用 Kimi AI 生成解读，最终推送到飞书 Webhook。
+"""
+
 import requests
 import re
 import os
@@ -5,11 +12,12 @@ import sys
 import time
 from datetime import datetime
 
-# ===== Config =====
-GITHUB_REPO       = "imjuya/juya-ai-daily"
-FEISHU_WEBHOOK    = os.environ.get("FEISHU_WEBHOOK", "")
-KIMI_API_KEY      = os.environ.get("KIMI_API_KEY", "")
+# ===== 配置 =====
+GITHUB_REPO       = "imjuya/juya-ai-daily"           # 数据来源的 GitHub 仓库
+FEISHU_WEBHOOK    = os.environ.get("FEISHU_WEBHOOK", "")  # 飞书机器人 Webhook 地址
+KIMI_API_KEY      = os.environ.get("KIMI_API_KEY", "")    # Kimi AI API Key
 
+# 各分类对应的带 Emoji 显示标题
 EMOJI_MAP = {
     "要闻":            "🗞️ 要闻",
     "模型发布":         "🚀 模型发布",
@@ -30,6 +38,7 @@ EMOJI_MAP = {
 # ===== 数据获取 =====
 
 def get_latest_issue():
+    """从 GitHub API 获取指定仓库最新的一条 open issue。"""
     url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
     params = {"state": "open", "per_page": 1, "sort": "created", "direction": "desc"}
     headers = {"Accept": "application/vnd.github.v3+json"}
@@ -42,10 +51,23 @@ def get_latest_issue():
 
 
 def extract_overview(body):
+    """
+    从 issue body（Markdown 格式）中提取"概览"章节的内容。
+
+    解析逻辑：
+    - 找到 `## 概览` 标题后开始提取
+    - 遇到下一个 `##` 标题时停止
+    - `### 小节标题` 作为分类 key
+    - `- ` 或 `* ` 开头的条目作为该分类的新闻条目
+
+    返回：
+        dict，结构为 { 分类名: [{"text": str, "url": str|None}, ...] }
+    """
     sections = {}
     current_section = None
     in_overview = False
 
+    # body 为空时直接返回，避免 NoneType 报错
     if not body:
         return sections
 
@@ -53,18 +75,28 @@ def extract_overview(body):
         line = line.strip()
         if not line:
             continue
+
+        # 进入"概览"章节
         if line.startswith('## ') and line[3:].strip() == '概览':
             in_overview = True
             continue
+
+        # 遇到下一个二级标题，退出概览解析
         if in_overview and line.startswith('## '):
             break
+
         if not in_overview:
             continue
+
+        # 三级标题作为分类名
         if line.startswith('### '):
             current_section = line[4:].strip()
             sections[current_section] = []
+        # 列表条目：提取文本和链接
         elif (line.startswith('- ') or line.startswith('* ')) and current_section is not None:
             raw = line[2:].strip()
+
+            # 从括号内容中提取第一个 http 链接
             url = None
             for m in re.finditer(r'\(([^)]+)\)', raw):
                 c = m.group(1)
@@ -72,10 +104,13 @@ def extract_overview(body):
                     url = c
                     break
 
+            # 去除 Markdown 链接语法，保留纯文本
             text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', raw)
             text = re.sub(r'\(https?://[^\s)]+\)', '', text)
             text = re.sub(r'`[^`]+`', '', text).strip()
+            # 去除末尾的 issue 编号（如 #42）
             text = re.sub(r'\s*#\d+\s*$', '', text).strip()
+            # 去除末尾的箭头/链接符号
             text = re.sub(r'\s*[↗→➜➚⇗🔗]+[\s\u3000]*$', '', text).strip()
 
             if text:
@@ -87,7 +122,12 @@ def extract_overview(body):
 # ===== Industry News 读取 =====
 
 def read_industry_news() -> str | None:
-    """Read the latest ai_digest_*.md file from the reports/ directory."""
+    """
+    读取 reports/ 目录下最新的 ai_digest_*.md 文件内容。
+
+    文件命名约定：ai_digest_YYYYMMDD.md，按文件名降序取最新一个。
+    返回文件内容字符串，如果目录不存在或无文件则返回 None。
+    """
     reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
     if not os.path.isdir(reports_dir):
         return None
@@ -106,7 +146,19 @@ def read_industry_news() -> str | None:
 # ===== Kimi AI 解读 =====
 
 def generate_ai_analysis(sections, trending_repos=None, industry_news=None):
-    """调用 Kimi API 综合三个信息源生成解读"""
+    """
+    调用 Kimi API，综合三个信息源生成今日 AI 解读。
+
+    信息源：
+    1. sections       - 从 GitHub Issue 概览章节解析出的新闻分类
+    2. industry_news  - Industry News Markdown 文件内容（可选）
+    3. trending_repos - GitHub Trending 项目列表（可选）
+
+    使用指数退避策略最多重试 3 次，适用于服务过载等可恢复错误。
+
+    返回：
+        str  AI 生成的解读文本，失败时返回 None
+    """
     # 信息源 1：橘子早报
     news_text = ""
     for title, items in sections.items():
@@ -133,6 +185,7 @@ def generate_ai_analysis(sections, trending_repos=None, industry_news=None):
 
     combined_input = news_text + industry_text + trending_text
 
+    # 构建信息源描述，供 prompt 使用
     sources_desc = "1. 橘子早报（AI 技术动态）"
     if industry_news:
         sources_desc += "\n2. Industry News（商业视角行业动态，含资本、伦理、产业政策）"
@@ -283,6 +336,7 @@ ChatGPT（包含 OpenAI、ChatGPT、Codex 等）：
                 print("AI 解读生成成功")
                 return analysis
 
+            # 判断是否为可重试的错误类型
             error_type = data.get("error", {}).get("type", "")
             should_retry = error_type in {
                 "engine_overloaded_error",
@@ -299,6 +353,7 @@ ChatGPT（包含 OpenAI、ChatGPT、Codex 等）：
             if attempt == max_retries:
                 return None
 
+        # 指数退避：2s, 4s, 8s
         delay = base_delay_seconds * (2 ** (attempt - 1))
         print(f"{delay} 秒后重试 AI 解读...")
         time.sleep(delay)
@@ -307,7 +362,14 @@ ChatGPT（包含 OpenAI、ChatGPT、Codex 等）：
 
 
 def build_analysis_card(analysis):
-    """构建 AI 解读飞书卡片"""
+    """
+    构建 AI 解读飞书交互卡片。
+
+    卡片结构：
+    - 标题：🧠 今日 AI 解读 · YYYY-MM-DD（紫色主题）
+    - 正文：Kimi 生成的 Markdown 解读内容
+    - 底部：免责说明
+    """
     today = datetime.now().strftime("%Y-%m-%d")
 
     content = analysis.strip()
@@ -343,6 +405,14 @@ def build_analysis_card(analysis):
 # ===== 飞书 Webhook 早报卡片 =====
 
 def build_feishu_card(issue, sections):
+    """
+    构建 AI 早报飞书交互卡片。
+
+    卡片结构：
+    - 标题：🤖 AI 早报 · YYYY-MM-DD（蓝色主题）
+    - 正文：各分类新闻条目（含可点击链接）
+    - 底部：原文链接
+    """
     today = datetime.now().strftime("%Y-%m-%d")
     overview_lines = []
     for title, items in sections.items():
@@ -381,6 +451,14 @@ def build_feishu_card(issue, sections):
 # ===== 主流程 =====
 
 def main():
+    """
+    主入口函数，执行完整的推送流程：
+
+    1. 从 GitHub 获取最新 Issue
+    2. 解析 Issue 概览章节
+    3. 推送飞书早报卡片（仅需 FEISHU_WEBHOOK）
+    4. 若配置了 KIMI_API_KEY，综合三个信息源生成 AI 解读并推送第二张卡片
+    """
     print("Fetching latest issue...")
     issue = get_latest_issue()
     if not issue:
