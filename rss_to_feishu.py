@@ -69,6 +69,7 @@ def extract_overview(body):
     if not body:
         return sections
 
+    print(f"Body前500字: {repr(body[:500])}")
     for line in body.split('\n'):
         line = line.strip()
         if not line:
