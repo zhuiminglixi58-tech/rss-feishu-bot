@@ -38,16 +38,19 @@ EMOJI_MAP = {
 # ===== 数据获取 =====
 
 def get_latest_issue():
-    """从 GitHub API 获取指定仓库最新的一条 open issue。"""
+    """从 GitHub API 获取指定仓库最新的一条有内容的 open issue（跳过 body 为空的）。"""
     url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
-    params = {"state": "open", "per_page": 1, "sort": "created", "direction": "desc"}
+    params = {"state": "open", "per_page": 10, "sort": "created", "direction": "desc"}
     headers = {"Accept": "application/vnd.github.v3+json"}
     token = os.environ.get("GITHUB_TOKEN", "")
     if token:
         headers["Authorization"] = f"Bearer {token}"
     resp = requests.get(url, params=params, headers=headers, timeout=15)
     issues = resp.json()
-    return issues[0] if issues else None
+    for issue in issues:
+        if issue.get("body"):  # 跳过 body 为空的 issue
+            return issue
+    return None
 
 
 def extract_overview(body):
