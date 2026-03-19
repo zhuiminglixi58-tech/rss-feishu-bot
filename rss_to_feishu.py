@@ -46,6 +46,9 @@ def extract_overview(body):
     current_section = None
     in_overview = False
 
+    if not body:
+        return sections
+
     for line in body.split('\n'):
         line = line.strip()
         if not line:
