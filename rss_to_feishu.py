@@ -38,18 +38,26 @@ EMOJI_MAP = {
 # ===== 数据获取 =====
 
 def get_latest_issue():
-    """从 GitHub API 获取指定仓库最新的一条有内容的 open issue（跳过 body 为空的）。"""
+    """从 GitHub API 获取 imjuya 今日发布的最新 open issue（跳过 body 为空的）。"""
+    from datetime import datetime, timezone
     url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
-    params = {"state": "open", "per_page": 10, "sort": "created", "direction": "desc"}
+    params = {"state": "open", "per_page": 10, "sort": "created", "direction": "desc", "creator": "imjuya"}
     headers = {"Accept": "application/vnd.github.v3+json"}
     token = os.environ.get("GITHUB_TOKEN", "")
     if token:
         headers["Authorization"] = f"Bearer {token}"
     resp = requests.get(url, params=params, headers=headers, timeout=15)
     issues = resp.json()
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     for issue in issues:
-        if issue.get("body"):  # 跳过 body 为空的 issue
+        if not issue.get("body"):
+            continue
+        created = issue["created_at"][:10]  # 取 YYYY-MM-DD
+        if created == today:
             return issue
+
+    print(f"今日（{today}）暂无 imjuya 发布的 issue")
     return None
 
 
