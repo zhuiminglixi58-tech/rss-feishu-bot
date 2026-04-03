@@ -8,11 +8,13 @@ on:
 jobs:
   push:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v5
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -25,12 +27,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
         run: python rss_to_feishu.py
-
-      - name: Keep workflow active
-        run: |
-          echo "Last run: $(date)" > last_run.txt
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add last_run.txt
-          git commit -m "chore: keep workflow active" || echo "nothing to commit"
-          git push
