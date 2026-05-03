@@ -22,7 +22,7 @@ FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
 
 # LLM 配置（兼容 OpenAI API 格式）
 LLM_API_KEY   = os.environ.get("LLM_API_KEY", "")
-LLM_BASE_URL  = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com").rstrip("/")
+LLM_BASE_URL  = (os.environ.get("LLM_BASE_URL") or "https://api.deepseek.com").rstrip("/")
 LLM_MODEL     = os.environ.get("LLM_MODEL", "deepseek-v4-flash")
 
 HOURS_LOOKBACK  = 26   # 只抓最近 N 小时内的文章
