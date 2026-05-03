@@ -22,5 +22,7 @@ jobs:
       - name: Push Industry News to Feishu
         env:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: python industry_news.py

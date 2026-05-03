@@ -7,12 +7,14 @@ weekly_digest.py
   1. 拉取 juya-ai-daily 最近 7 条 issue（本周早报原料）
   2. 抓取 GitHub Trending（weekly 维度，反映本周热门）
   3. 抓取 RSS 本周文章
-  4. 统一交给 Kimi 生成周报
+  4. 统一交给 LLM 生成周报
   5. 推送飞书
 
 环境变量：
   FEISHU_WEBHOOK   飞书机器人 Webhook
-  KIMI_API_KEY     Kimi API Key
+  LLM_API_KEY      LLM API Key
+  LLM_BASE_URL     OpenAI 兼容 API 地址，默认 https://api.deepseek.com
+  LLM_MODEL        模型名称，默认 deepseek-v4-flash
   GITHUB_TOKEN     GitHub Token（可选）
 """
 
@@ -24,7 +26,12 @@ import feedparser
 from datetime import datetime, timezone, timedelta
 
 FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
-KIMI_API_KEY   = os.environ.get("KIMI_API_KEY", "")
+
+# LLM 配置（兼容 OpenAI API 格式）
+LLM_API_KEY   = os.environ.get("LLM_API_KEY", "")
+LLM_BASE_URL  = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com").rstrip("/")
+LLM_MODEL     = os.environ.get("LLM_MODEL", "deepseek-v4-flash")
+
 GITHUB_TOKEN   = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO    = "imjuya/juya-ai-daily"
 
@@ -178,7 +185,7 @@ def fetch_weekly_rss() -> str:
 # ===== Kimi 生成周报 =====
 
 def generate_weekly_report(issues_text: str, trending_text: str, rss_text: str) -> str | None:
-    if not KIMI_API_KEY:
+    if not LLM_API_KEY:
         return None
 
     # 计算本周日期范围
@@ -231,13 +238,13 @@ def generate_weekly_report(issues_text: str, trending_text: str, rss_text: str) 
     for attempt in range(1, max_retries + 1):
         try:
             resp = requests.post(
-                "https://api.moonshot.cn/v1/chat/completions",
+                f"{LLM_BASE_URL}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {KIMI_API_KEY}",
+                    "Authorization": f"Bearer {LLM_API_KEY}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "moonshot-v1-8k",
+                    "model": LLM_MODEL,
                     "temperature": 0.5,
                     "max_tokens": 1200,
                     "messages": [
@@ -252,7 +259,7 @@ def generate_weekly_report(issues_text: str, trending_text: str, rss_text: str) 
             )
             data = resp.json()
             if data.get("choices"):
-                print("Kimi 周报生成完成")
+                print("LLM 周报生成完成")
                 return data["choices"][0]["message"]["content"].strip()
 
             error_type = data.get("error", {}).get("type", "")
@@ -261,12 +268,12 @@ def generate_weekly_report(issues_text: str, trending_text: str, rss_text: str) 
                 "rate_limit_reached_error",
                 "service_unavailable_error",
             }
-            print(f"Kimi 失败（{attempt}/{max_retries}）:", data)
+            print(f"LLM 失败（{attempt}/{max_retries}）:", data)
             if attempt == max_retries or not retryable:
                 return None
 
         except requests.RequestException as e:
-            print(f"Kimi 请求异常（{attempt}/{max_retries}）: {e}")
+            print(f"LLM 请求异常（{attempt}/{max_retries}）: {e}")
             if attempt == max_retries:
                 return None
 
@@ -304,7 +311,7 @@ def build_weekly_card(content: str) -> dict:
                     "tag": "div",
                     "text": {
                         "tag": "lark_md",
-                        "content": "_由 Kimi 从本周早报、GitHub Trending、RSS 媒体综合生成_",
+                        "content": "_由 AI 从本周早报、GitHub Trending、RSS 媒体综合生成_",
                     },
                 },
             ],
@@ -332,7 +339,7 @@ def build_raw_card() -> dict:
                     "tag": "div",
                     "text": {
                         "tag": "lark_md",
-                        "content": "本周周报生成失败（Kimi 服务不可用），请手动查看各日报回顾。",
+                        "content": "本周周报生成失败（AI 服务不可用），请手动查看各日报回顾。",
                     },
                 },
             ],

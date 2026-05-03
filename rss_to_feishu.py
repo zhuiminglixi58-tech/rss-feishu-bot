@@ -2,7 +2,7 @@
 rss_to_feishu.py
 
 从 GitHub Issues 获取 AI 日报内容，结合 Industry News 和 GitHub Trending，
-调用 Kimi AI 生成解读，最终推送到飞书 Webhook。
+调用 LLM（默认 DeepSeek）生成解读，最终推送到飞书 Webhook。
 """
 
 import requests
@@ -15,7 +15,11 @@ from datetime import datetime
 # ===== 配置 =====
 GITHUB_REPO       = "imjuya/juya-ai-daily"           # 数据来源的 GitHub 仓库
 FEISHU_WEBHOOK    = os.environ.get("FEISHU_WEBHOOK", "")  # 飞书机器人 Webhook 地址
-KIMI_API_KEY      = os.environ.get("KIMI_API_KEY", "")    # Kimi AI API Key
+
+# LLM 配置（兼容 OpenAI API 格式）
+LLM_API_KEY   = os.environ.get("LLM_API_KEY", "")
+LLM_BASE_URL  = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com").rstrip("/")
+LLM_MODEL     = os.environ.get("LLM_MODEL", "deepseek-v4-flash")
 
 # 各分类对应的带 Emoji 显示标题
 EMOJI_MAP = {
@@ -296,13 +300,13 @@ ChatGPT（包含 OpenAI、ChatGPT、Codex 等）：
     for attempt in range(1, max_retries + 1):
         try:
             resp = requests.post(
-                "https://api.moonshot.cn/v1/chat/completions",
+                f"{LLM_BASE_URL}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {KIMI_API_KEY}",
+                    "Authorization": f"Bearer {LLM_API_KEY}",
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "moonshot-v1-8k",
+                    "model": LLM_MODEL,
                     "temperature": 0.6,
                     "max_tokens": 1024,
                     "messages": [
@@ -334,7 +338,7 @@ ChatGPT（包含 OpenAI、ChatGPT、Codex 等）：
                 return None
 
         except requests.RequestException as exc:
-            print(f"调用 Kimi 接口异常（第 {attempt}/{max_retries} 次）: {exc}")
+            print(f"调用 LLM 接口异常（第 {attempt}/{max_retries} 次）: {exc}")
             if attempt == max_retries:
                 return None
 
@@ -368,7 +372,7 @@ def build_analysis_card(analysis):
                     "tag": "div",
                     "text": {
                         "tag": "lark_md",
-                        "content": "_以上解读由 Kimi AI 自动生成，仅供参考_"
+                        "content": "_以上解读由 AI 自动生成，仅供参考_"
                     }
                 }
             ]
@@ -442,7 +446,7 @@ def main():
         print("飞书早报卡片:", resp.json().get("msg", ""))
 
     # ② 推送飞书 AI 解读卡片（综合三个信息源）
-    if FEISHU_WEBHOOK and KIMI_API_KEY:
+    if FEISHU_WEBHOOK and LLM_API_KEY:
         industry_news = read_industry_news()
         if not industry_news:
             print("未找到 Industry News 文件，将跳过该信息源")
@@ -463,8 +467,8 @@ def main():
             resp = requests.post(FEISHU_WEBHOOK, json=analysis_card, timeout=10)
             print("飞书 AI 解读卡片:", resp.json().get("msg", ""))
 
-    elif FEISHU_WEBHOOK and not KIMI_API_KEY:
-        print("跳过 AI 解读：未配置 KIMI_API_KEY")
+    elif FEISHU_WEBHOOK and not LLM_API_KEY:
+        print("跳过 AI 解读：未配置 LLM_API_KEY")
 
 
 if __name__ == "__main__":

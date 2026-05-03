@@ -1,14 +1,16 @@
 """
 github_trending.py
 
-抓取 GitHub Trending 每日热门项目，经 Kimi 筛选后推送到飞书。
+抓取 GitHub Trending 每日热门项目，经 LLM 筛选后推送到飞书。
 
 用法：
     python github_trending.py
 
 环境变量（与 rss_to_feishu.py 共用）：
     FEISHU_WEBHOOK   飞书机器人 Webhook
-    KIMI_API_KEY     Kimi API Key（可选，配置后开启 AI 筛选）
+    LLM_API_KEY      LLM API Key（可选，配置后开启 AI 筛选）
+    LLM_BASE_URL     OpenAI 兼容 API 地址，默认 https://api.deepseek.com
+    LLM_MODEL        模型名称，默认 deepseek-v4-flash
     GITHUB_TOKEN     GitHub Token（可选，用于提高 API 请求限额）
 """
 
@@ -20,7 +22,12 @@ from datetime import datetime
 
 # ===== Config =====
 FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
-KIMI_API_KEY   = os.environ.get("KIMI_API_KEY", "")
+
+# LLM 配置（兼容 OpenAI API 格式）
+LLM_API_KEY   = os.environ.get("LLM_API_KEY", "")
+LLM_BASE_URL  = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com").rstrip("/")
+LLM_MODEL     = os.environ.get("LLM_MODEL", "deepseek-v4-flash")
+
 GITHUB_TOKEN   = os.environ.get("GITHUB_TOKEN", "")
 
 # 抓取的语言范围：空字符串 = 全语言，可改为 "python" / "typescript" 等
@@ -169,7 +176,7 @@ def kimi_filter_repos(repos: list[dict]) -> str | None:
     让它筛选出最有趣/前沿的项目并用人话描述。
     返回格式化好的 Markdown 文本，直接塞进飞书卡片。
     """
-    if not KIMI_API_KEY:
+    if not LLM_API_KEY:
         return None
 
     # 整理成文本给 Kimi
@@ -212,13 +219,13 @@ def kimi_filter_repos(repos: list[dict]) -> str | None:
     for attempt in range(1, max_retries + 1):
         try:
             resp = requests.post(
-                "https://api.moonshot.cn/v1/chat/completions",
+                f"{LLM_BASE_URL}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {KIMI_API_KEY}",
+                    "Authorization": f"Bearer {LLM_API_KEY}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "moonshot-v1-8k",
+                    "model": LLM_MODEL,
                     "temperature": 0.5,
                     "max_tokens": 1024,
                     "messages": [
@@ -245,12 +252,12 @@ def kimi_filter_repos(repos: list[dict]) -> str | None:
                 "rate_limit_reached_error",
                 "service_unavailable_error",
             }
-            print(f"Kimi 调用失败（第 {attempt}/{max_retries} 次）:", data)
+            print(f"LLM 调用失败（第 {attempt}/{max_retries} 次）:", data)
             if attempt == max_retries or not retryable:
                 return None
 
         except requests.RequestException as e:
-            print(f"Kimi 请求异常（第 {attempt}/{max_retries} 次）: {e}")
+            print(f"LLM 请求异常（第 {attempt}/{max_retries} 次）: {e}")
             if attempt == max_retries:
                 return None
 
@@ -298,7 +305,7 @@ def build_trending_card_with_ai(ai_content: str) -> dict:
                             f"[📊 查看完整 Trending →](https://github.com/trending"
                             f"{'/' + TRENDING_LANGUAGE if TRENDING_LANGUAGE else ''}"
                             f"?since={TRENDING_SINCE})"
-                            f"\n_由 Kimi AI 从今日 Top {MAX_REPOS} 中筛选_"
+                            f"\n_由 AI 从今日 Top {MAX_REPOS} 中筛选_"
                         ),
                     },
                 },
@@ -376,11 +383,11 @@ def main():
 
     # 2. Kimi 筛选（可选）
     ai_content = None
-    if KIMI_API_KEY:
-        print("正在调用 Kimi 筛选项目...")
+    if LLM_API_KEY:
+        print("正在调用 LLM 筛选项目...")
         ai_content = kimi_filter_repos(repos)
     else:
-        print("未配置 KIMI_API_KEY，跳过 AI 筛选，直接推送原始列表")
+        print("未配置 LLM_API_KEY，跳过 AI 筛选，直接推送原始列表")
 
     # 3. 构建卡片
     if ai_content:

@@ -1,11 +1,13 @@
 """
 industry_news.py
 
-聚合多个 RSS 源，用 Kimi 筛选关键人物动态和行业大事，推送到飞书。
+聚合多个 RSS 源，用 LLM 筛选关键人物动态和行业大事，推送到飞书。
 
 环境变量：
     FEISHU_WEBHOOK   飞书机器人 Webhook
-    KIMI_API_KEY     Kimi API Key（可选，配置后开启 AI 筛选）
+    LLM_API_KEY      LLM API Key（可选，配置后开启 AI 筛选）
+    LLM_BASE_URL     OpenAI 兼容 API 地址，默认 https://api.deepseek.com
+    LLM_MODEL        模型名称，默认 deepseek-v4-flash
 """
 
 import os
@@ -17,7 +19,11 @@ from datetime import datetime, timezone, timedelta
 
 # ===== Config =====
 FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
-KIMI_API_KEY   = os.environ.get("KIMI_API_KEY", "")
+
+# LLM 配置（兼容 OpenAI API 格式）
+LLM_API_KEY   = os.environ.get("LLM_API_KEY", "")
+LLM_BASE_URL  = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com").rstrip("/")
+LLM_MODEL     = os.environ.get("LLM_MODEL", "deepseek-v4-flash")
 
 HOURS_LOOKBACK  = 26   # 只抓最近 N 小时内的文章
 MAX_TO_KIMI     = 30   # 送给 Kimi 的最大文章数
@@ -138,7 +144,7 @@ def fetch_recent_articles() -> list[dict]:
 # ===== Kimi 筛选 =====
 
 def kimi_filter_news(articles: list[dict]) -> str | None:
-    if not KIMI_API_KEY or not articles:
+    if not LLM_API_KEY or not articles:
         return None
 
     subset = articles[:MAX_TO_KIMI]
@@ -181,13 +187,13 @@ def kimi_filter_news(articles: list[dict]) -> str | None:
     for attempt in range(1, max_retries + 1):
         try:
             resp = requests.post(
-                "https://api.moonshot.cn/v1/chat/completions",
+                f"{LLM_BASE_URL}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {KIMI_API_KEY}",
+                    "Authorization": f"Bearer {LLM_API_KEY}",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "moonshot-v1-8k",
+                    "model": LLM_MODEL,
                     "temperature": 0.4,
                     "max_tokens": 1000,
                     "messages": [
@@ -216,7 +222,7 @@ def kimi_filter_news(articles: list[dict]) -> str | None:
                 return None
 
         except requests.RequestException as e:
-            print(f"Kimi 请求异常（{attempt}/{max_retries}）: {e}")
+            print(f"LLM 请求异常（{attempt}/{max_retries}）: {e}")
             if attempt == max_retries:
                 return None
 
@@ -251,7 +257,7 @@ def build_ai_card(content: str) -> dict:
                         "tag": "lark_md",
                         "content": (
                             f"_来源：{sources}_\n"
-                            f"_由 Kimi 从近 {HOURS_LOOKBACK}h 资讯中筛选_"
+                            f"_由 AI 从近 {HOURS_LOOKBACK}h 资讯中筛选_"
                         ),
                     },
                 },
@@ -302,12 +308,12 @@ def main():
         print("未抓取到任何文章，退出")
         return
 
-    if KIMI_API_KEY:
-        print(f"调用 Kimi 筛选（{len(articles)} 篇，取前 {MAX_TO_KIMI}）...")
+    if LLM_API_KEY:
+        print(f"调用 LLM 筛选（{len(articles)} 篇，取前 {MAX_TO_KIMI}）...")
         content = kimi_filter_news(articles)
         card = build_ai_card(content) if content else build_raw_card(articles)
     else:
-        print("未配置 KIMI_API_KEY，使用降级展示")
+        print("未配置 LLM_API_KEY，使用降级展示")
         card = build_raw_card(articles)
 
     if not FEISHU_WEBHOOK:

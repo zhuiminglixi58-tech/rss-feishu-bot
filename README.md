@@ -54,7 +54,9 @@ github.com/trending
 | 变量 | 必填 | 说明 |
 |------|------|------|
 | `FEISHU_WEBHOOK` | 是 | 飞书机器人 Webhook 地址 |
-| `KIMI_API_KEY` | 推荐 | Moonshot Kimi API Key，未配置则跳过 AI 筛选，直接推原始列表 |
+| `LLM_API_KEY` | 推荐 | LLM API Key，未配置则跳过 AI 筛选，直接推原始列表 |
+| `LLM_BASE_URL` | 否 | OpenAI 兼容 API 地址，默认 `https://api.deepseek.com` |
+| `LLM_MODEL` | 否 | 模型名称，默认 `deepseek-v4-flash` |
 | `GITHUB_TOKEN` | 否 | 提高 GitHub API 请求限额，避免匿名限流 |
 
 ## 本地运行
@@ -63,7 +65,7 @@ github.com/trending
 pip install requests feedparser
 
 export FEISHU_WEBHOOK='https://open.feishu.cn/open-apis/bot/v2/hook/xxx'
-export KIMI_API_KEY='your-kimi-api-key'
+export LLM_API_KEY='your-llm-api-key'
 
 python rss_to_feishu.py    # 早报 + AI 解读
 python industry_news.py    # 行业动态
