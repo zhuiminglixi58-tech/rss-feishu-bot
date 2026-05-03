@@ -30,7 +30,7 @@ FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
 # LLM 配置（兼容 OpenAI API 格式）
 LLM_API_KEY   = os.environ.get("LLM_API_KEY", "")
 LLM_BASE_URL  = (os.environ.get("LLM_BASE_URL") or "https://api.deepseek.com").rstrip("/")
-LLM_MODEL     = os.environ.get("LLM_MODEL", "deepseek-v4-flash")
+LLM_MODEL     = os.environ.get("LLM_MODEL") or "deepseek-v4-flash"
 
 GITHUB_TOKEN   = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO    = "imjuya/juya-ai-daily"

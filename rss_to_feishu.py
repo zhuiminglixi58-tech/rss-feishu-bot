@@ -19,7 +19,7 @@ FEISHU_WEBHOOK    = os.environ.get("FEISHU_WEBHOOK", "")  # 飞书机器人 Webh
 # LLM 配置（兼容 OpenAI API 格式）
 LLM_API_KEY   = os.environ.get("LLM_API_KEY", "")
 LLM_BASE_URL  = (os.environ.get("LLM_BASE_URL") or "https://api.deepseek.com").rstrip("/")
-LLM_MODEL     = os.environ.get("LLM_MODEL", "deepseek-v4-flash")
+LLM_MODEL     = os.environ.get("LLM_MODEL") or "deepseek-v4-flash"
 
 # 各分类对应的带 Emoji 显示标题
 EMOJI_MAP = {
